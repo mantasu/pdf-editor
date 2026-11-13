@@ -8,7 +8,7 @@ const { parsePdf } = require(`${REPO}/out/pdf/read.js`);
 const { PDFDocument } = require(`${REPO}/node_modules/pdf-lib`);
 
 suite("editing", async (t) => {
-  const h = await start({ pdf: `${REPO}/resources/media/example.pdf`, width: 900 });
+  const h = await start({ pdf: `${REPO}/resources/example.pdf`, width: 900 });
   const { page, host } = h;
   const card = page.locator(".pdf-popup");
   const menu = (name) => page.getByRole("menuitem", { name, exact: true });

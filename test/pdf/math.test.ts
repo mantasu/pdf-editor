@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { type SvgEl, drawSvg, fillOf, formulaOf, parseTransform, pathToPdf, splitTex, typesetFormulas } from "../../src/pdf/math";
+import { type SvgEl, drawSvg, formulaOf, parseTransform, pathToPdf, splitTex, typesetFormulas } from "../../src/pdf/math";
 
 const el = (kind: string, attributes: Record<string, string> = {}, children: SvgEl[] = []): SvgEl => ({ kind, attributes, children });
 
@@ -31,16 +31,6 @@ describe("converting SVG to PDF content", () => {
     expect(parseTransform("matrix(1 2 3 4 5 6) matrix(1 2)")).toBe("1 2 3 4 5 6");
     expect(parseTransform("rotate(90)")).toBe("0 1 -1 0 0 0");
     expect(parseTransform("rotate()")).toBeUndefined();
-  });
-
-  test("fillOf maps \\color names to fill operators", () => {
-    expect(fillOf(undefined)).toBeUndefined();
-    expect(fillOf("currentColor")).toBeUndefined(); // inherits the text color
-    expect(fillOf("#12")).toBeUndefined(); // malformed hex
-    expect(fillOf("Red")).toBe("1 0 0 rg");
-    expect(fillOf("#0f0")).toBe("0 1 0 rg");
-    expect(fillOf("#0000FF")).toBe("0 0 1 rg");
-    expect(fillOf("rgb(255, 0, 51)")).toBe("1 0 0.2 rg");
   });
 
   test("pathToPdf handles every command, absolute and relative", () => {

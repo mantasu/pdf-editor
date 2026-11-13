@@ -133,6 +133,6 @@ const annotations = [
   annot("ink", "check", "John", { subject: "Checkmark", ink: [[fig.x + 100, fig.y - 12, fig.x + 104.7, fig.y - 16.9, fig.x + 114, fig.y - 6.4]], width: 2, color: [0, 0, 0] }),
 ];
 
-const out = join(import.meta.dirname, "..", "resources", "media", "example.pdf");
+const out = join(import.meta.dirname, "..", "resources", "example.pdf");
 writeFileSync(out, await mergeAnnotations(await doc.save({ useObjectStreams: false }), annotations, { now: new Date(MORNING) }));
 console.log("resources/example.pdf written");

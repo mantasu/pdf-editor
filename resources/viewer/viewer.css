@@ -584,11 +584,14 @@ button.pdf-status-pill:hover {
 }
 
 .pdf-signature-preview {
-  overflow: hidden;
-  padding: 8px 12px;
-  color: #000;
-  font-size: 42px;
-  white-space: nowrap;
+  height: 84px;
+  padding: 6px 10px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.pdf-signature-preview.placeholder {
+  opacity: 0.35;
 }
 
 .pdf-signature-image {
@@ -666,6 +669,11 @@ button.pdf-status-pill:hover {
 .pdf-chip.selected {
   border-color: var(--pdf-accent);
   background: var(--pdf-hover);
+}
+
+.pdf-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .pdf-width-sample {

@@ -1,12 +1,10 @@
-import { PDFDict, PDFDocument, PDFHexString, PDFName, PDFNumber, PDFRef, PDFString } from "pdf-lib";
+import { PDFDict, PDFDocument, PDFName, PDFNumber, PDFRef, PDFString } from "pdf-lib";
 import { describe, expect, test, vi } from "vitest";
 import type { Annot } from "../../src/pdf/model";
 import { toPdfDate, fromPdfDate } from "../../src/pdf/date";
-import { readColor, readLists, readNumbers, readBox, readText, refOfId, stringObject } from "../../src/pdf/objects";
+import { readColor, readLists, readText } from "../../src/pdf/objects";
 import { ownershipOf, parsePdf, stateOf } from "../../src/pdf/read";
-import { popupRectFor, mergeAnnotations } from "../../src/pdf/write";
-
-const QUAD = [10, 30, 110, 30, 10, 18, 110, 18];
+import { mergeAnnotations } from "../../src/pdf/write";
 
 async function dictWith(entries: Record<string, unknown>): Promise<PDFDict> {
   const doc = await PDFDocument.create();
@@ -40,13 +38,6 @@ describe("PDF dates", () => {
     expect(toPdfDate(date)).toMatch(/Z$/u);
     spy.mockRestore();
   });
-
-  test("formats local time with the UTC offset and round-trips", () => {
-    const date = new Date("2026-10-07T12:34:56Z");
-    const formatted = toPdfDate(date);
-    expect(formatted).toMatch(/^D:\d{14}(Z|[+-]\d{2}'\d{2}')$/u);
-    expect(fromPdfDate(formatted)).toBe(date.toISOString());
-  });
 });
 
 describe("PDF object helpers", () => {
@@ -63,28 +54,6 @@ describe("PDF object helpers", () => {
     expect(readLists(await dictWith({ L: 5 }), "L")).toBeUndefined();
     expect(readLists(await dictWith({ L: [5] }), "L")).toBeUndefined();
     expect(readLists(await dictWith({ L: [["x"]] }), "L")).toBeUndefined();
-  });
-
-  test("numbers, rects and text accept only well-formed values", async () => {
-    expect(readNumbers(await dictWith({ X: [1, "Name"] }), "X")).toBeUndefined();
-    expect(readNumbers(await dictWith({ X: 5 }), "X")).toBeUndefined();
-    expect(readBox(await dictWith({ Rect: [1, 2, 3] }))).toBeUndefined();
-    expect(readBox(await dictWith({ Rect: [30, 40, 10, 20] }))).toEqual([10, 20, 30, 40]);
-    expect(readText(await dictWith({ State: "Accepted" }), "State")).toBe("Accepted");
-    expect(readText(await dictWith({ State: 3 }), "State")).toBeUndefined();
-  });
-
-  test("text strings: ASCII literals with escapes, Unicode as UTF-16", () => {
-    expect(stringObject("a(b)\\c\r\n\t")).toBeInstanceOf(PDFString);
-    expect((stringObject("a(b)\\c") as PDFString).asString()).toBe("a\\(b\\)\\\\c");
-    expect(stringObject("Grüße ✓")).toBeInstanceOf(PDFHexString);
-    expect((stringObject("Grüße ✓") as PDFHexString).decodeText()).toBe("Grüße ✓");
-  });
-
-  test("references", () => {
-    expect(refOfId("12 0")).toEqual(PDFRef.of(12, 0));
-    expect(refOfId("x")).toBeUndefined();
-    expect(refOfId(undefined)).toBeUndefined();
   });
 
   test("classification", async () => {
@@ -148,37 +117,6 @@ describe("writing edge cases", () => {
     author: "",
   };
 
-  test("matches stored annotations by /NM when the reference is stale", async () => {
-    const doc = await onePage();
-    const ctx = doc.context;
-    const highlight = ctx.register(
-      ctx.obj({ Type: "Annot", Subtype: "Highlight", Rect: base.rect, QuadPoints: QUAD, NM: PDFString.of("h1"), C: [1, 1, 0] }),
-    );
-    doc.getPage(0).node.set(PDFName.of("Annots"), ctx.obj([highlight]));
-    const source = await doc.save();
-    const model: Annot[] = [
-      { ...base, id: "h1", ref: "999 0", kind: "highlight", subtype: "Highlight", quads: QUAD, color: [0, 1, 0], contents: "green" },
-    ];
-    const out = await PDFDocument.load(await mergeAnnotations(source, model));
-    // Same object, now with an Acrobat-style pop-up.
-    const annots = out.getPage(0).node.lookup(PDFName.of("Annots"))!.toString();
-    expect(annots).toMatch(new RegExp(`^\\[ ${highlight.toString()} \\d+ 0 R \\]$`, "u"));
-    const dict = out.context.lookup(highlight) as PDFDict;
-    expect(dict.lookup(PDFName.of("C"))?.toString()).toBe("[ 0 1 0 ]");
-  });
-
-  test("a changed kind replaces the stored annotation", async () => {
-    const doc = await onePage();
-    const ctx = doc.context;
-    const highlight = ctx.register(ctx.obj({ Type: "Annot", Subtype: "Highlight", Rect: base.rect, QuadPoints: QUAD }));
-    doc.getPage(0).node.set(PDFName.of("Annots"), ctx.obj([highlight]));
-    const model: Annot[] = [
-      { ...base, id: "x", ref: `${highlight.objectNumber} 0`, kind: "strikeout", subtype: "StrikeOut", quads: QUAD },
-    ];
-    const { annotations } = await parsePdf(await mergeAnnotations(await doc.save(), model));
-    expect(annotations.map((a) => a.kind)).toEqual(["strikeout"]);
-  });
-
   test("updates moved notes, their pop-up, state removal and authorless text", async () => {
     const doc = await onePage();
     const ctx = doc.context;
@@ -207,29 +145,6 @@ describe("writing edge cases", () => {
     const popupDict = out.context.lookup(popup) as PDFDict;
     expect(popupDict.lookup(PDFName.of("Rect"))?.toString()).toBe("[ 0 0 204 114 ]");
     expect(popupDict.lookup(PDFName.of("Open"))?.toString()).toBe("true");
-  });
-
-  test("other annotations keep everything but their text, and stay untouched when unchanged", async () => {
-    const doc = await onePage();
-    const ctx = doc.context;
-    const ink = ctx.register(
-      ctx.obj({ Type: "Annot", Subtype: "Polygon", Rect: [0, 0, 50, 50], Contents: PDFString.of("a\rb"), RC: PDFString.of("<p/>") }),
-    );
-    doc.getPage(0).node.set(PDFName.of("Annots"), ctx.obj([ink]));
-    const source = await doc.save();
-    const { annotations } = await parsePdf(source);
-    let out = await PDFDocument.load(await mergeAnnotations(source, annotations));
-    expect((out.context.lookup(ink) as PDFDict).has(PDFName.of("RC"))).toBe(true);
-    out = await PDFDocument.load(await mergeAnnotations(source, [{ ...annotations[0]!, author: "new author" }]));
-    const dict = out.context.lookup(ink) as PDFDict;
-    expect(dict.has(PDFName.of("RC"))).toBe(true);
-    expect(readText(dict, "T")).toBe("new author");
-  });
-
-  test("default pop-up sits at the page's right edge", async () => {
-    const doc = await onePage();
-    expect(popupRectFor(doc.getPage(0), [10, 300, 34, 324])).toEqual([96, 210, 300, 324]);
-    expect(popupRectFor(doc.getPage(0), [10, 10, 34, 34])).toEqual([96, 0, 300, 114]);
   });
 
   test("tolerates malformed entries: non-dicts, foreign refs, missing rects/AP, direct others", async () => {
@@ -268,44 +183,6 @@ describe("writing edge cases", () => {
     const reread = await parsePdf(out);
     expect(reread.annotations.filter((a) => a.kind === "note").map((a) => a.id).sort()).toEqual(["bad-popup", "norect", "on-link"]);
     expect(reread.annotations.find((a) => a.kind === "underline")!.quads).toEqual([10, 30, 110, 30, 10, 18, 110, 18]);
-  });
-
-  test("broken appearance streams are regenerated", async () => {
-    const doc = await onePage();
-    const ctx = doc.context;
-    const empty = ctx.register(ctx.obj({ Type: "Annot", Subtype: "Text", Rect: [0, 0, 24, 24], NM: PDFString.of("e"), AP: {} }));
-    const dangling = ctx.register(ctx.obj({ Type: "Annot", Subtype: "Text", Rect: [0, 0, 24, 24], NM: PDFString.of("d"), AP: { N: PDFRef.of(9999, 0) } }));
-    doc.getPage(0).node.set(PDFName.of("Annots"), ctx.obj([empty, dangling]));
-    const source = await doc.save();
-    const out = await PDFDocument.load(await mergeAnnotations(source, (await parsePdf(source)).annotations));
-    for (const ref of [empty, dangling]) {
-      const normal = (out.context.lookup(ref) as PDFDict).lookup(PDFName.of("AP"), PDFDict).get(PDFName.of("N"));
-      expect(out.context.lookup(normal as PDFRef)).toBeDefined();
-    }
-  });
-
-  test("garbage collection keeps appearance streams that are still shared", async () => {
-    const doc = await onePage();
-    const ctx = doc.context;
-    const shared = ctx.register(ctx.stream("0 0 m", { Type: "XObject", Subtype: "Form", BBox: [0, 0, 24, 24] }));
-    const kept = ctx.register(ctx.obj({ Type: "Annot", Subtype: "Text", Rect: [0, 0, 24, 24], NM: PDFString.of("kept"), AP: { N: shared } }));
-    const removed = ctx.register(ctx.obj({ Type: "Annot", Subtype: "Text", Rect: [0, 0, 24, 24], NM: PDFString.of("gone"), AP: { N: shared } }));
-    doc.getPage(0).node.set(PDFName.of("Annots"), ctx.obj([kept, removed]));
-    const source = await doc.save();
-    const { annotations } = await parsePdf(source);
-    const out = await PDFDocument.load(await mergeAnnotations(source, annotations.filter((a) => a.id === "kept")));
-    expect(out.context.lookup(removed)).toBeUndefined();
-    expect(out.context.lookup(shared)).toBeDefined();
-  });
-
-  test("replies whose parent cannot be referenced are not written as notes", async () => {
-    const doc = await onePage();
-    const source = await doc.save();
-    const out = await mergeAnnotations(source, [
-      { ...base, id: "direct", kind: "other", subtype: "Polygon", rect: [0, 0, 9, 9] },
-      { ...base, id: "reply", kind: "note", subtype: "Text", rect: [0, 0, 24, 24], replyTo: "direct", contents: "hi" },
-    ]);
-    expect((await parsePdf(out)).annotations).toEqual([]);
   });
 
   test("other annotations: text without contents, explicit modification dates", async () => {

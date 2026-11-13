@@ -11,7 +11,7 @@ const { parsePdf } = require(`${REPO}/out/pdf/read.js`);
 const WIDTH = Number(process.env.WIDTH ?? 700);
 
 suite(`comments-${WIDTH}`, async (t) => {
-  const h = await start({ pdf: `${REPO}/resources/media/example.pdf`, width: WIDTH });
+  const h = await start({ pdf: `${REPO}/resources/example.pdf`, width: WIDTH });
   const { page, host } = h;
   const card = page.locator(".pdf-popup");
 
@@ -198,7 +198,12 @@ suite(`comments-${WIDTH}`, async (t) => {
   // Colors: a few presets plus a custom color (for the tool, as nothing is selected).
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
-  await page.locator("#pdfProperties").click();
+  // A narrow bar folds the color button away; every tool dropdown holds the same panel.
+  if (await page.locator("#pdfProperties").isVisible()) {
+    await page.locator("#pdfProperties").click();
+  } else {
+    await page.locator('#pdfToolbar [data-group="markup"] + .pdf-chevron').click();
+  }
   const swatches = await page.locator(".pdf-properties .pdf-swatch:not(.custom)").count();
   t.check("properties offer the 5 shared presets plus a custom color", swatches === 5 && (await page.locator(".pdf-custom-color").count()) === 1, String(swatches));
   await page.locator(".pdf-custom-color").evaluate((input) => {

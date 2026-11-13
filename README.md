@@ -17,7 +17,7 @@
 View and edit PDFs like in [Acrobat](https://www.adobe.com/uk/acrobat.html) or [Preview](https://support.apple.com/en-gb/guide/preview/welcome/mac). This extension also allows annotating in [LaTeX](https://www.latex-project.org/) maths and supports [Copilot](https://github.com/copilot) integration for explanations/summaries. Super useful for analyzing research papers or working with documents in general.
 
 > [!TIP]
-> See [`example.pdf`](resources/media/example.pdf) for a guided tour. Any saved edits open in Acrobat, Preview and browsers
+> See [`example.pdf`](resources/example.pdf) for a guided tour. Any saved edits open in Acrobat, Preview and browsers
 
 ## Features
 
@@ -27,8 +27,8 @@ View and edit PDFs like in [Acrobat](https://www.adobe.com/uk/acrobat.html) or [
 | ------------------ | --------------------------------------------------------------------- |
 | 🖍️ **Annotate**    | Highlight, underline, comment, reply and resolve                      |
 | ✍️ **Rich text**   | **Bold**, _italic_, `code` and `$\LaTeX$` in comments and text boxes  |
-| 🎨 **Draw**        | Pen, shapes, arrows, images, and text boxes in six fonts              |
-| 🖊️ **Fill & sign** | Forms, signatures and ✓ ✗ marks                                      |
+| 🎨 **Draw**        | Pen, shapes, arrows, images, and text boxes in six fonts; save as PNG |
+| 🖊️ **Fill & sign** | Forms, signatures (drawn, typed or uploaded) and ✓ ✗ marks           |
 | ✨ **Copilot**     | Explain or summarize a passage with Copilot; `@pdf` in Copilot Chat   |
 | 📄 **Pages**       | Rotate, reorder, insert, print; undo everything                       |
 
@@ -81,7 +81,7 @@ Install the latest version of [Node.js LTS](https://nodejs.org) and the dependen
 make setup
 ```
 
-> **Windows:** install Node.js LTS from [nodejs.org](https://nodejs.org) manually, then use `make install` (requires [Git Bash](https://gitforwindows.org) or [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)).
+> **Windows:** install Node.js LTS from [nodejs.org](https://nodejs.org) manually, then run `npm install` (`make` requires [Git Bash](https://gitforwindows.org) or [WSL](https://learn.microsoft.com/en-us/windows/wsl/install)).
 
 
 ```bash
@@ -122,4 +122,4 @@ test/             # unit and e2e tests
 
 ## License
 
-This extension is under [MIT](https://opensource.org/license/mit) license. Note that [pdf.js](https://mozilla.github.io/pdf.js/) ([Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0)) and [MathJax](https://www.mathjax.org/) ([Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0)) are bundled unmodified, as are the [Roboto](https://fonts.google.com/specimen/Roboto), [Lora](https://fonts.google.com/specimen/Lora) and [Comic Neue](https://fonts.google.com/specimen/Comic+Neue) fonts ([SIL Open Font License](https://openfontlicense.org/); each license is in `resources/fonts`).
+This extension is under [MIT](https://opensource.org/license/mit) license. Note that [pdf.js](https://mozilla.github.io/pdf.js/) ([Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0)) and [MathJax](https://www.mathjax.org/) ([Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0)) are bundled unmodified, as are the [Roboto](https://fonts.google.com/specimen/Roboto), [Lora](https://fonts.google.com/specimen/Lora) and [Comic Neue](https://fonts.google.com/specimen/Comic+Neue) text-box fonts and the [Birthstone](https://fonts.google.com/specimen/Birthstone), [Allison](https://fonts.google.com/specimen/Allison), [Yellowtail](https://fonts.google.com/specimen/Yellowtail) and [Great Vibes](https://fonts.google.com/specimen/Great+Vibes) signature fonts ([SIL Open Font License](https://openfontlicense.org/), Yellowtail [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0); each license is in `resources/fonts`).

@@ -11,7 +11,7 @@ const { parsePdf } = require(`${REPO}/out/pdf/read.js`);
 const { pngOf } = require(`${REPO}/out/pdf/image.js`);
 
 suite("tools", async (t) => {
-  const h = await start({ pdf: `${REPO}/resources/media/example.pdf`, width: 1200, height: 900 });
+  const h = await start({ pdf: `${REPO}/resources/example.pdf`, width: 1200, height: 900 });
   const { page, host } = h;
   const drawTool = (title) => useTool(page, "draw", title);
   const pageBox = await page.locator(".page").first().boundingBox();

@@ -31,7 +31,7 @@ suite("vscode", async (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pdf-vscode-"));
   const ws = path.join(tmp, "ws");
   fs.mkdirSync(ws);
-  fs.copyFileSync(`${REPO}/resources/media/example.pdf`, path.join(ws, "example.pdf"));
+  fs.copyFileSync(`${REPO}/resources/example.pdf`, path.join(ws, "example.pdf"));
   await plainPdf(path.join(ws, "plain.pdf"));
   const app = await _electron.launch({
     executablePath: VSCODE,

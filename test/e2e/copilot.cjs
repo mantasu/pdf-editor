@@ -6,7 +6,7 @@ const { start, REPO } = require("./harness.cjs");
 const { suite, dragSelect, lastEdit, selectText } = require("./lib.cjs");
 
 suite("copilot", async (t) => {
-  const h = await start({ pdf: `${REPO}/resources/media/example.pdf`, width: 1300, height: 760 });
+  const h = await start({ pdf: `${REPO}/resources/example.pdf`, width: 1300, height: 760 });
   const { page, host } = h;
   const card = page.locator(".pdf-copilot");
   const until = async (condition) => {
@@ -81,6 +81,7 @@ suite("copilot", async (t) => {
   const context = await reply;
   t.check("@pdf gets every page's text", context.pages.length === 3 && context.pages[2].includes("fillable form"));
   t.check("and the selection", context.selection?.text === "Comments take" && context.selection.page === 1);
+  // Letters are placed by the browser's serif font: without Times or a metric twin (Liberation Serif), the ends drift.
   t.check("and the text under highlights", context.marks["example-highlight"] === "quick-action bar" && context.marks["example-rich"] === "bold, italic" && context.marks["example-strikeout"] === "and browsers" && context.marks["example-underline"] === "first text you post", JSON.stringify(context.marks));
   t.check("no webview errors", h.errors.length === 0, h.errors.join(" | "));
   await h.close();

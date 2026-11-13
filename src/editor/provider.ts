@@ -23,7 +23,7 @@ import { ACTION_LABELS, PageAction, pageAfter, perform } from "../pdf/pages";
 import { printDocument } from "./print";
 import type { Prefs, ToHost, ViewerState } from "../protocol";
 import { HOST_COMMANDS } from "../protocol";
-import { ViewLink } from "./session";
+import { ViewLink, asBytes } from "./session";
 import { MODEL_SETTING, askChat, pickModel } from "../copilot/model";
 import { type OpenDoc, registerChat } from "../copilot/participant";
 import { passagePrompt } from "../copilot/prompts";
@@ -141,6 +141,9 @@ export class PdfProvider implements CustomEditorProvider<PdfFile> {
         break;
       case "preferences":
         await this.prefs.update(PREFS_KEY, msg.preferences);
+        break;
+      case "save-image":
+        await this.saveImage(file, msg.name, msg.data);
         break;
       case "copilot":
         await this.answer(file, link, msg);
@@ -326,6 +329,22 @@ export class PdfProvider implements CustomEditorProvider<PdfFile> {
     }
     try {
       await printDocument(await file.build(await this.stateOf(file)), basename(file.uri.path));
+    } catch (error) {
+      await window.showErrorMessage(`PDF Viewer: ${reason(error)}`);
+    }
+  }
+
+  /** Save a PNG the viewer rendered, by default next to the PDF as `<pdf name>-<what it is>.png`. */
+  private async saveImage(file: PdfFile, name: string, data: unknown): Promise<void> {
+    const bytes = asBytes(data);
+    const stem = basename(file.uri.path).replace(/\.pdf$/iu, "");
+    const suggested = `${stem}-${name.replace(/[^\p{L}\p{N}]+/gu, "-").toLowerCase()}.png`;
+    const target = bytes && (await window.showSaveDialog({ defaultUri: Uri.joinPath(file.uri, "..", suggested), filters: { "PNG Image": ["png"] } }));
+    if (!target) {
+      return;
+    }
+    try {
+      await workspace.fs.writeFile(target, bytes);
     } catch (error) {
       await window.showErrorMessage(`PDF Viewer: ${reason(error)}`);
     }

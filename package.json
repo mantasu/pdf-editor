@@ -11,7 +11,7 @@
   },
   "license": "MIT",
   "engines": {
-    "vscode": "^1.95.0"
+    "vscode": "^1.146.0"
   },
   "categories": [
     "Visualization",
@@ -47,7 +47,7 @@
   "scripts": {
     "postinstall": "node scripts/pdfjs.mjs",
     "compile": "node -e \"require('fs').rmSync('out',{recursive:true,force:true})\" && tsc -p ./",
-    "bundle": "esbuild src/extension.ts --bundle --minify --platform=node --format=cjs --target=node20 --external:vscode --outfile=out/extension.js",
+    "bundle": "esbuild src/extension.ts --bundle --minify --platform=node --format=cjs --target=node22 --external:vscode --alias:#default-font=@mathjax/mathjax-tex-font/mjs --outfile=out/extension.js",
     "vscode:prepublish": "npm run compile && node scripts/pdfjs.mjs && npm run bundle",
     "test": "vitest run --coverage",
     "test:e2e": "npm run compile && node test/e2e/run.cjs",
@@ -210,8 +210,10 @@
     ]
   },
   "dependencies": {
+    "@mathjax/mathjax-mhchem-font-extension": "^4.1.3",
+    "@mathjax/mathjax-tex-font": "^4.1.3",
+    "@mathjax/src": "^4.1.3",
     "@pdf-lib/fontkit": "^1.1.1",
-    "mathjax-full": "^3.2.2",
     "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
@@ -221,13 +223,13 @@
     "@semantic-release/github": "*",
     "@semantic-release/npm": "*",
     "@semantic-release/release-notes-generator": "*",
-    "@types/node": "*",
-    "@types/vscode": "~1.95.0",
+    "@types/node": "24.x",
+    "@types/vscode": "~1.146.0",
     "@vitest/coverage-v8": "*",
     "esbuild": "^0.28.2",
     "gifenc": "^1.0.3",
     "omggif": "^1.0.10",
-    "playwright-core": "^1.63.0",
+    "playwright-core": "^1.65.0",
     "pngjs": "^7.0.0",
     "semantic-release": "*",
     "semantic-release-vsce": "*",

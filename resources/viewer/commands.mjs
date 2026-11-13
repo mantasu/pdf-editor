@@ -5,10 +5,10 @@
 import * as model from "./annotations.mjs";
 import { closeCard, cardId, composeCard, openCard } from "./card.mjs";
 import { copilotMenu } from "./copilot.mjs";
-import { ICON, KIND_NAMES, STATUSES, h, hexToRgb, iconNode, nameOf, pdfApp, rgbToHex } from "./core.mjs";
+import { ICON, KIND_NAMES, STATUSES, h, hexToRgb, iconNode, nameOf, pdfApp, reportError, rgbToHex, toHost } from "./core.mjs";
 import { bbox, mergeLines, roundPt, toQuads } from "./geometry.mjs";
 import { editTextBox, isTyping } from "./insert.mjs";
-import { NOTE_SIZE, baseViewport, centreOnLetters, htmlLayer, screenBox } from "./layers.mjs";
+import { NOTE_SIZE, annotationPng, baseViewport, canExport, centreOnLetters, htmlLayer, screenBox } from "./layers.mjs";
 import { openStylePanel, stylePanel } from "./toolbar.mjs";
 import { TEXT_MARKS, activeTool, fieldsFor, paletteFor } from "./tools.mjs";
 import { closeMenu, openMenu, openPopover } from "./ui.mjs";
@@ -148,6 +148,15 @@ export function deleteThread(id) {
   model.remove(id, `Delete ${nameOf(target)}`);
 }
 
+/** Render a drawing, picture or signature as PNG; the host asks where to save it. */
+async function savePng(annotation) {
+  try {
+    toHost({ type: "save-image", name: nameOf(annotation), data: await annotationPng(annotation) });
+  } catch (error) {
+    reportError(error);
+  }
+}
+
 /** Status choices: the PDF review states, "Completed" shown as Resolved; Cancelled (like Rejected) only on a thread that has it. */
 export function statusMenu(annotation) {
   const status = model.reviewStatus(annotation.id) ?? "None";
@@ -184,6 +193,10 @@ function threadMenu(annotation, x, y) {
   // Acrobat's private checkmarks are no longer offered, but one already set can still be taken off.
   if (model.checkedByMe(annotation.id)) {
     items.push({ label: "Remove Checkmark", action: () => model.toggleCheck(annotation.id), disabled: !replyable });
+  }
+  // Saving a copy changes nothing, so read-only documents offer it too.
+  if (canExport(annotation)) {
+    items.push({ label: "Save as PNG…", action: () => savePng(annotation) });
   }
   if (!editable) {
     return items;

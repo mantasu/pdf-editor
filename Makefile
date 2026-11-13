@@ -19,7 +19,7 @@ endif
 	npm install --no-audit --no-fund --loglevel=error
 
 .PHONY: example
-example: # Regenerate resources/media/example.pdf
+example: # Regenerate resources/example.pdf
 	npm run compile && node scripts/example.mjs
 
 .PHONY: media

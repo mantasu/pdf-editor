@@ -6,7 +6,7 @@ import * as model from "./annotations.mjs";
 import { hideObjectBar } from "./commands.mjs";
 import { h, pref, setPref } from "./core.mjs";
 import { bbox, roundPt } from "./geometry.mjs";
-import { LINE_HEIGHT, applyTextStyle, baseViewport, currentPage, htmlLayer, placeHtmlBox, redraw, verticalColumns } from "./layers.mjs";
+import { LINE_HEIGHT, SIGNATURE_FONTS, applyTextStyle, baseViewport, currentPage, htmlLayer, placeHtmlBox, redraw, verticalColumns } from "./layers.mjs";
 import { containsMath, formatToolbar, loadMathJax, mathLoaded, plainPaste, readEditor, richNodes } from "./richtext.mjs";
 import { fieldsFor } from "./tools.mjs";
 
@@ -210,7 +210,21 @@ async function readPicture(file) {
 // --- Signatures ------------------------------------------------------------------------
 // Kept in the `signature` preference, across documents: drawn ones as strokes (placed as ink), the rest as images.
 
-const SCRIPT_FONTS = ['"Snell Roundhand", "Apple Chancery", "Segoe Script", cursive', '"Brush Script MT", "Lucida Handwriting", cursive', '"Bradley Hand", "Comic Sans MS", cursive'];
+const scriptFont = (family, size) => `${size}px "${family}", cursive`;
+let measurer = null;
+
+/**
+ * Whether a loaded signature font has every letter of `text`: the browser would fill gaps from the fallback, and the
+ * width only stays the same across two different fallbacks when it needs none. Fonts still loading count as fitting.
+ */
+function fitsName(family, text) {
+  if (!document.fonts.check(scriptFont(family, 40))) {
+    return true;
+  }
+  measurer ??= document.createElement("canvas").getContext("2d");
+  const width = (fallback) => ((measurer.font = `40px "${family}", ${fallback}`), measurer.measureText(text).width);
+  return width("monospace") === width("serif");
+}
 
 export function storedSignature() {
   return pref("signature", null);
@@ -238,14 +252,44 @@ export function signatureAt(page, x, y) {
 export function askSignature() {
   return new Promise((resolve) => {
     const pad = signaturePad();
-    let fontIndex = 0;
-    const sample = h("div", { className: "pdf-signature-preview" });
-    const showSample = () => {
-      sample.textContent = nameInput.value || "Your name";
-      sample.style.fontFamily = SCRIPT_FONTS[fontIndex];
+    let family = SIGNATURE_FONTS[0][1];
+    // The image Save stores, scaled into the box: every style shows at about the same size, and long names whole.
+    const sample = h("img", { className: "pdf-signature-preview", alt: "" });
+    const styleRow = h("div", { className: "pdf-prop-row", role: "group", "aria-label": "Style" });
+    let samples = 0;
+    // The fonts that can write the name, else (a script none of them has) all of them.
+    const usableFonts = () => {
+      const fitting = SIGNATURE_FONTS.map(([, font]) => font).filter((font) => fitsName(font, nameInput.value));
+      return fitting.length ? fitting : SIGNATURE_FONTS.map(([, font]) => font);
+    };
+    const showSample = async () => {
+      const usable = usableFonts();
+      family = usable.includes(family) ? family : usable[0];
+      styleRow.replaceChildren(
+        ...SIGNATURE_FONTS.map(([style, font]) =>
+          h("button", {
+            type: "button",
+            className: `pdf-chip${font === family ? " selected" : ""}`,
+            "aria-pressed": String(font === family),
+            disabled: !usable.includes(font),
+            title: usable.includes(font) ? font : `${font} has no letters for this name`,
+            onclick: () => ((family = font), showSample()),
+          }, style),
+        ),
+      );
+      const text = nameInput.value.trim() || "Your name";
+      const ticket = ++samples;
+      const { image } = await typedSignature(text, family);
+      // Drawing can fall behind typing: only the latest name is shown.
+      if (ticket === samples) {
+        Object.assign(sample, { src: image, alt: `${text} in ${family}` });
+        sample.classList.toggle("placeholder", !nameInput.value.trim());
+      }
     };
     const nameInput = h("input", { type: "text", className: "pdf-signature-text", placeholder: "Type your name", "aria-label": "Your name", oninput: showSample });
     showSample();
+    // Until a font is in, any name fits it: check again once they all are.
+    Promise.all(SIGNATURE_FONTS.map(([, font]) => document.fonts.load(scriptFont(font, 40)))).then(showSample, () => undefined);
     let uploaded = null;
     const fileInput = h("input", { type: "file", accept: "image/png,image/jpeg,image/gif,image/webp", "aria-label": "Signature image" });
     const uploadPreview = h("img", { className: "pdf-signature-image", alt: "" });
@@ -257,13 +301,13 @@ export function askSignature() {
     });
     const panes = {
       Draw: h("div", { className: "pdf-signature-pane" }, pad.canvas, h("button", { type: "button", className: "pdf-link-button", onclick: () => pad.clear() }, "Clear")),
-      Type: h("div", { className: "pdf-signature-pane" }, nameInput, sample, h("button", { type: "button", className: "pdf-button", onclick: () => ((fontIndex = (fontIndex + 1) % SCRIPT_FONTS.length), showSample()) }, "Change style")),
+      Type: h("div", { className: "pdf-signature-pane" }, nameInput, sample, styleRow),
       Image: h("div", { className: "pdf-signature-pane" }, fileInput, uploadPreview),
     };
     // What each tab saves, or undefined while it has nothing usable (a drawing needs a stroke of two or more points).
     const readers = {
       Draw: () => (pad.strokes.some((s) => s.length >= 4) ? { type: "ink", ...fitStrokes(pad.strokes.filter((s) => s.length >= 2)) } : undefined),
-      Type: () => (nameInput.value.trim() ? { type: "image", ...typedSignature(nameInput.value.trim(), SCRIPT_FONTS[fontIndex]) } : undefined),
+      Type: async () => (nameInput.value.trim() ? { type: "image", ...(await typedSignature(nameInput.value.trim(), family)) } : undefined),
       Image: () => (uploaded ? { type: "image", ...uploaded } : undefined),
     };
     let mode = "Draw";
@@ -278,8 +322,8 @@ export function askSignature() {
       backdrop.remove();
       resolve(saved);
     };
-    const save = () => {
-      const signature = readers[mode]();
+    const save = async () => {
+      const signature = await readers[mode]();
       if (signature) {
         setPref("signature", signature);
         close(true);
@@ -347,16 +391,21 @@ function fitStrokes(strokes) {
   return { strokes: strokes.map((stroke) => stroke.map((v, i) => roundPt((v - (i % 2 ? y1 : x1)) / size))), aspect: roundPt(Math.max(y2 - y1, 1) / size) };
 }
 
-/** A typed name drawn in a script font on a canvas cropped to the ink, as a PNG data URL. */
-function typedSignature(text, font) {
+/** A typed name drawn in a signature font on a canvas cropped to the ink, as a PNG data URL. */
+async function typedSignature(text, family) {
+  const font = scriptFont(family, 96);
+  // A font that failed to load leaves its fallback, which still makes a signature.
+  await document.fonts.load(font, text).catch(() => undefined);
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
-  context.font = `96px ${font}`;
+  context.font = font;
+  // Swashes and leading loops reach past the letters' advance, so the ink box sets the size, not the width.
   const metrics = context.measureText(text);
-  Object.assign(canvas, { width: Math.ceil(metrics.width) + 20, height: Math.ceil(metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) + 20 });
+  const [left, right] = [Math.max(0, metrics.actualBoundingBoxLeft), Math.max(metrics.width, metrics.actualBoundingBoxRight)];
+  Object.assign(canvas, { width: Math.ceil(left + right) + 20, height: Math.ceil(metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) + 20 });
   // Resizing the canvas reset the context, font included.
-  Object.assign(context, { font: `96px ${font}`, fillStyle: "#000" });
-  context.fillText(text, 10, 10 + metrics.actualBoundingBoxAscent);
+  Object.assign(context, { font, fillStyle: "#000" });
+  context.fillText(text, 10 + left, 10 + metrics.actualBoundingBoxAscent);
   return { image: canvas.toDataURL("image/png"), aspect: roundPt(canvas.height / canvas.width) };
 }
 

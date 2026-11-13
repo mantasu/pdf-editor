@@ -206,25 +206,69 @@ export function formulaOf(svg: SvgEl): Formula {
 type Typeset = (tex: string) => SvgEl;
 let typesetter: Typeset | undefined;
 
-/** MathJax (TeX -> SVG, all extensions), loaded on first use. */
+/**
+ * The TeX packages MathJax 3's AllPackages had, so formulas keep their meaning; resources/viewer/richtext.mjs loads the
+ * same ones. Each is imported below by name, as a bundler needs literal paths.
+ */
+const TEX_PACKAGES = [
+  "base", "action", "ams", "amscd", "bbox", "boldsymbol", "braket", "bussproofs", "cancel", "cases", "centernot", "color", "colortbl", "configmacros",
+  "empheq", "enclose", "extpfeil", "gensymb", "html", "mathtools", "mhchem", "newcommand", "noerrors", "noundefined", "tagformat", "textcomp",
+  "textmacros", "unicode", "upgreek", "verb",
+];
+
+/** MathJax 4 (TeX -> SVG in the MathJax TeX font, the packages above), loaded on first use. */
 async function loadMathJax(): Promise<Typeset> {
-  const [{ mathjax }, { TeX }, { SVG }, { liteAdaptor }, { RegisterHTMLHandler }, { AllPackages }] = await Promise.all([
-    import("mathjax-full/js/mathjax.js"),
-    import("mathjax-full/js/input/tex.js"),
-    import("mathjax-full/js/output/svg.js"),
-    import("mathjax-full/js/adaptors/liteAdaptor.js"),
-    import("mathjax-full/js/handlers/html.js"),
-    import("mathjax-full/js/input/tex/AllPackages.js"),
+  const [{ mathjax }, { TeX }, { SVG }, { liteAdaptor }, { RegisterHTMLHandler }, { MathJaxTexFont }, { MathJaxMhchemFontExtension }] = await Promise.all([
+    import("@mathjax/src/js/mathjax.js"),
+    import("@mathjax/src/js/input/tex.js"),
+    import("@mathjax/src/js/output/svg.js"),
+    import("@mathjax/src/js/adaptors/liteAdaptor.js"),
+    import("@mathjax/src/js/handlers/html.js"),
+    import("@mathjax/mathjax-tex-font/js/svg.js"),
+    // mhchem draws its reaction arrows from this font extension.
+    import("@mathjax/mathjax-mhchem-font-extension/js/svg.js"),
+    // Each package registers itself when loaded.
+    import("@mathjax/src/js/input/tex/base/BaseConfiguration.js"),
+    import("@mathjax/src/js/input/tex/action/ActionConfiguration.js"),
+    import("@mathjax/src/js/input/tex/ams/AmsConfiguration.js"),
+    import("@mathjax/src/js/input/tex/amscd/AmsCdConfiguration.js"),
+    import("@mathjax/src/js/input/tex/bbox/BboxConfiguration.js"),
+    import("@mathjax/src/js/input/tex/boldsymbol/BoldsymbolConfiguration.js"),
+    import("@mathjax/src/js/input/tex/braket/BraketConfiguration.js"),
+    import("@mathjax/src/js/input/tex/bussproofs/BussproofsConfiguration.js"),
+    import("@mathjax/src/js/input/tex/cancel/CancelConfiguration.js"),
+    import("@mathjax/src/js/input/tex/cases/CasesConfiguration.js"),
+    import("@mathjax/src/js/input/tex/centernot/CenternotConfiguration.js"),
+    import("@mathjax/src/js/input/tex/color/ColorConfiguration.js"),
+    import("@mathjax/src/js/input/tex/colortbl/ColortblConfiguration.js"),
+    import("@mathjax/src/js/input/tex/configmacros/ConfigMacrosConfiguration.js"),
+    import("@mathjax/src/js/input/tex/empheq/EmpheqConfiguration.js"),
+    import("@mathjax/src/js/input/tex/enclose/EncloseConfiguration.js"),
+    import("@mathjax/src/js/input/tex/extpfeil/ExtpfeilConfiguration.js"),
+    import("@mathjax/src/js/input/tex/gensymb/GensymbConfiguration.js"),
+    import("@mathjax/src/js/input/tex/html/HtmlConfiguration.js"),
+    import("@mathjax/src/js/input/tex/mathtools/MathtoolsConfiguration.js"),
+    import("@mathjax/src/js/input/tex/mhchem/MhchemConfiguration.js"),
+    import("@mathjax/src/js/input/tex/newcommand/NewcommandConfiguration.js"),
+    import("@mathjax/src/js/input/tex/noerrors/NoErrorsConfiguration.js"),
+    import("@mathjax/src/js/input/tex/noundefined/NoUndefinedConfiguration.js"),
+    import("@mathjax/src/js/input/tex/tagformat/TagFormatConfiguration.js"),
+    import("@mathjax/src/js/input/tex/textcomp/TextcompConfiguration.js"),
+    import("@mathjax/src/js/input/tex/textmacros/TextMacrosConfiguration.js"),
+    import("@mathjax/src/js/input/tex/unicode/UnicodeConfiguration.js"),
+    import("@mathjax/src/js/input/tex/upgreek/UpgreekConfiguration.js"),
+    import("@mathjax/src/js/input/tex/verb/VerbConfiguration.js"),
   ]);
+  MathJaxTexFont.addExtension(MathJaxMhchemFontExtension);
   const adaptor = liteAdaptor();
   RegisterHTMLHandler(adaptor);
   const tex = new TeX({
-    packages: AllPackages,
+    packages: TEX_PACKAGES,
     formatError: (_jax: unknown, error: Error) => {
       throw error;
     },
   });
-  const document = mathjax.document("", { InputJax: tex, OutputJax: new SVG({ fontCache: "none" }) });
+  const document = mathjax.document("", { InputJax: tex, OutputJax: new SVG({ fontData: MathJaxTexFont, fontCache: "none" }) });
   type Element = Parameters<typeof adaptor.allAttributes>[0];
   // <text> nodes (characters outside the fonts) carry no drawing and are skipped.
   const toTree = (node: Element): SvgEl => ({

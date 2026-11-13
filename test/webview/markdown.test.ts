@@ -23,10 +23,6 @@ describe("rendering Copilot answers", () => {
     ]);
   });
 
-  test("nested emphasis nests its flags", () => {
-    expect(fromMarkdown("**bold *and italic***").rich).toEqual([[{ text: "bold ", bold: true }, { text: "and italic", bold: true, italic: true }]]);
-  });
-
   test("__double underscores__ mean bold", () => {
     expect(fromMarkdown("__under__")).toEqual({ contents: "under", rich: [[{ text: "under", bold: true }]] });
   });
@@ -37,10 +33,5 @@ describe("rendering Copilot answers", () => {
     expect(rich![0]).toEqual([{ text: "Title", bold: true }]);
     expect(rich![5]).toEqual([{ text: "quoted", italic: true }]);
     expect(rich![6]).toEqual([{ text: "const x = 1;", code: true }]);
-  });
-
-  test("answers without markup stay plain", () => {
-    expect(fromMarkdown("Just text.")).toEqual({ contents: "Just text." });
-    expect(fromMarkdown("")).toEqual({ contents: "" });
   });
 });

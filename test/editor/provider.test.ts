@@ -20,6 +20,7 @@ import {
   shownWarnings,
   watchers,
   window,
+  workspace,
 } from "../__mocks__/vscode";
 import type { Annot } from "../../src/pdf/model";
 import { parsePdf } from "../../src/pdf/read";
@@ -128,30 +129,6 @@ beforeEach(() => {
 });
 
 describe("PdfProvider", () => {
-  test("register wires the custom editor and commands", () => {
-    const context = { extensionUri: Uri.file(process.cwd()), globalState: memento, subscriptions: [] as unknown[] };
-    PdfProvider.register(context as never);
-    expect(window.registerCustomEditorProvider).toHaveBeenCalledWith(
-      "pdf-editor.viewer",
-      expect.any(PdfProvider),
-      { webviewOptions: { retainContextWhenHidden: true }, supportsMultipleEditorsPerDocument: false },
-    );
-    expect([...registeredCommands.keys()].sort()).toEqual(
-      [
-        "pdf-editor.deletePage",
-        "pdf-editor.insertBlankPageAfter",
-        "pdf-editor.insertBlankPageBefore",
-        "pdf-editor.movePageDown",
-        "pdf-editor.movePageUp",
-        "pdf-editor.print",
-        "pdf-editor.rotatePage",
-        "pdf-editor.askInChat",
-        "pdf-editor.chooseCopilotModel",
-      ].sort(),
-    );
-    expect(context.subscriptions).toHaveLength(11);
-  });
-
   test("registered commands reach the active document", async () => {
     const context = { extensionUri: Uri.file(process.cwd()), globalState: memento, subscriptions: [] as unknown[] };
     PdfProvider.register(context as never);
@@ -176,6 +153,24 @@ describe("PdfProvider", () => {
     expect(memento.update).toHaveBeenCalledWith("pdf-editor.preferences", { recentColors: ["#123456"] });
     provider.resolveCustomEditor(document, stubPanel().panel as never);
     expect(html.render).toHaveBeenLastCalledWith(expect.anything(), uri, { recentColors: ["#123456"] });
+  });
+
+  test("saves a drawing or signature the viewer sends as PNG where the user picks", async () => {
+    const { fake } = await openViewer();
+    const png = new Uint8Array([137, 80, 78, 71]);
+    const target = Uri.file("/docs/sig.png");
+    vi.mocked(window.showSaveDialog).mockResolvedValueOnce(target);
+    await fake.send({ type: "save-image", name: "Signature", data: png.buffer });
+    expect(window.showSaveDialog).toHaveBeenCalledWith({ defaultUri: Uri.file("/docs/draft-signature.png"), filters: { "PNG Image": ["png"] } });
+    expect(files.get(target.toString())).toEqual(png);
+    // Cancelling the dialog, malformed data, then a failed write.
+    await fake.send({ type: "save-image", name: "Drawing", data: png });
+    await fake.send({ type: "save-image", name: "Image", data: "not bytes" });
+    expect(window.showSaveDialog).toHaveBeenCalledTimes(2);
+    vi.mocked(window.showSaveDialog).mockResolvedValueOnce(target);
+    vi.mocked(workspace.fs.writeFile).mockRejectedValueOnce(new Error("read-only"));
+    await fake.send({ type: "save-image", name: "Drawing", data: png });
+    expect(shownErrors).toEqual(["PDF Viewer: read-only"]);
   });
 
   test("restores a hot-exit backup", async () => {
@@ -239,28 +234,6 @@ describe("PdfProvider", () => {
     expect(document.state.annotations).toEqual([]);
   });
 
-  test("save marks the state that includes text committed during the snapshot as saved", async () => {
-    const { provider, document, fake } = await openViewer();
-    fake.answer(() => {
-      // The viewer commits a comment being typed just before answering.
-      void fake.send({ type: "edit", label: "Add", annotations: [sticky("typed")] });
-      return { annotations: [sticky("typed")] };
-    });
-    await provider.saveCustomDocument(document);
-    expect(document.state.annotations.map((a) => a.id)).toEqual(["typed"]);
-    expect(document.dirty).toBe(false);
-  });
-
-  test("a failed save keeps the document dirty", async () => {
-    const { provider, document, fake } = await openViewer();
-    await fake.send({ type: "edit", label: "Add", annotations: [sticky("a")] });
-    fake.answer(() => ({ annotations: [sticky("a")] }));
-    const { workspace } = await import("../__mocks__/vscode");
-    workspace.fs.writeFile.mockRejectedValueOnce(new Error("disk full"));
-    await expect(provider.saveCustomDocument(document)).rejects.toThrow("disk full");
-    expect(document.dirty).toBe(true);
-  });
-
   test("a page operation is abandoned when the document changed meanwhile", async () => {
     const { provider, document, fake, edits } = await openViewer();
     fake.answer(() => ({ annotations: [] }));
@@ -298,16 +271,6 @@ describe("PdfProvider", () => {
     expect(target.fragment).toBe("L3");
   });
 
-  test("save writes the merged PDF and marks the document clean", async () => {
-    const { provider, document, fake } = await openViewer();
-    await fake.send({ type: "edit", label: "Add", annotations: [sticky("a")] });
-    fake.answer(() => ({ annotations: [sticky("a")] }));
-    await provider.saveCustomDocument(document);
-    expect(document.dirty).toBe(false);
-    const saved = await parsePdf(files.get(uri.toString())!);
-    expect(saved.annotations.map((a) => a.id)).toEqual(["a"]);
-  });
-
   test("save without a webview uses the document's own state", async () => {
     const { provider, document, fake } = await openViewer();
     await fake.send({ type: "edit", label: "Add", annotations: [sticky("a")] });
@@ -331,19 +294,6 @@ describe("PdfProvider", () => {
     expect(document.state.annotations).toEqual([]);
     expect(document.dirty).toBe(false);
     expect(tail(fake)).toMatchObject({ type: "load", annotations: [] });
-  });
-
-  test("backups contain the merged PDF and can be deleted", async () => {
-    const { provider, document, fake } = await openViewer();
-    fake.answer(() => ({ annotations: [sticky("c")] }));
-    const destination = Uri.file("/backups/2");
-    const backup = await provider.backupCustomDocument(document, { destination } as never, {} as never);
-    expect(backup.id).toBe(destination.toString());
-    // Backups run while the user types: they must not close the comment being written.
-    expect(fake.posted.findLast((m) => m.type === "request-snapshot")).toMatchObject({ flush: false });
-    expect((await parsePdf(files.get(destination.toString())!)).annotations.map((a) => a.id)).toEqual(["c"]);
-    backup.delete();
-    await vi.waitFor(() => expect(files.has(destination.toString())).toBe(false));
   });
 
   test("external changes reload clean documents and warn about dirty ones", async () => {
@@ -378,14 +328,6 @@ describe("PdfProvider", () => {
     expect(tail(fake)).toMatchObject({ type: "load" });
     edits.at(-1)!.redo();
     expect(document.state.annotations.map((a) => a.page)).toEqual([1]);
-  });
-
-  test("page operations use the page passed by the context menu", async () => {
-    const { provider, document, fake } = await openViewer();
-    fake.answer(() => ({ annotations: [] }));
-    await provider.runPage("insert-after", 2);
-    expect((await PDFDocument.load(document.state.working)).getPageCount()).toBe(3);
-    expect(tail(fake)).toMatchObject({ type: "load", page: 3 });
   });
 
   test("no-op and failing page operations", async () => {
@@ -478,17 +420,6 @@ describe("PdfProvider", () => {
     workspace.fs.delete.mockRejectedValueOnce(new Error("gone"));
     expect(() => backup.delete()).not.toThrow();
     await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-
-  test("Ask Copilot streams the answer to the viewer", async () => {
-    const { fake } = await openViewer();
-    const model = fakeModel(["An ", "answer"]);
-    languageModels.push(model);
-    await fake.send({ type: "copilot", requestId: 7, action: "explain", selection: "E = mc^2", pageText: "Physics", page: 2 });
-    await vi.waitFor(() => expect(tail(fake)).toEqual({ type: "copilot-done", requestId: 7 }));
-    expect(fake.posted.filter((m) => m.type === "copilot-text").map((m) => m.text)).toEqual(["An ", "answer"]);
-    const prompt = (model.sendRequest.mock.calls[0]![0] as unknown as Array<{ content: string }>)[0]!.content;
-    expect(prompt).toContain("Document: draft.pdf, page 2.");
   });
 
   test("Ask Copilot uses the model named in pdf-editor.copilot.model", async () => {

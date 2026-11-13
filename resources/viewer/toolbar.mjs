@@ -70,7 +70,10 @@ export function setupToolbar() {
   );
   document.getElementById("toolbarViewerRight").prepend(toolbar);
   const collapsible = [colorButton, ...toolbar.querySelectorAll(':scope > .pdf-split:has([data-group="cursor"]), .pdf-cursor-separator')];
-  new ResizeObserver(() => collapseToFit(collapsible)).observe(document.getElementById("toolbarContainer"));
+  // Refit when the bar resizes and when pdf.js's own groups widen after load (page count, zoom names); the right
+  // group, which collapsing narrows, is left out so that refitting cannot trigger itself.
+  const refit = new ResizeObserver(() => collapseToFit(collapsible));
+  ["toolbarContainer", "toolbarViewerLeft", "toolbarViewerMiddle"].map((id) => document.getElementById(id)).filter(Boolean).forEach((node) => refit.observe(node));
   setupSidebar(commentsButton);
   onToolChange(refresh);
   // pdf.js can also turn its hand tool on or off by itself (its secondary menu, its own H key).

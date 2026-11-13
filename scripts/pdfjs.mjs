@@ -1,14 +1,14 @@
 // Fetches what the extension bundles but does not keep in git. Runs on `npm install` (so `make setup` too);
 // offline, the copies already there are kept, and a packaged build ships whatever is in place.
 // 1. resources/pdf.js: the newest pdf.js release (legacy build), checked for everything the viewer hooks into.
-// 2. resources/fonts: the text-box fonts beyond the PDF standard ones, Google Fonts static TTFs (from the
-//    @expo-google-fonts packages on npm) with each family's SIL Open Font License. The viewer shows them
-//    through @font-face and src/pdf/fonts.ts embeds the glyphs a text box uses.
+// 2. resources/fonts: the text-box fonts beyond the PDF standard ones and the typed-signature fonts, Google Fonts
+//    static TTFs (from the @expo-google-fonts packages on npm) with each family's SIL Open Font License. The viewer
+//    shows them through @font-face and src/pdf/fonts.ts embeds the glyphs a text box uses.
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 const dir = join(import.meta.dirname, "..", "resources", "pdf.js");
 const read = (file) => readFileSync(join(dir, file), "utf8");
@@ -71,18 +71,26 @@ console.log(`pdf.js ${version} checked`);
 // --- Fonts ------------------------------------------------------------------------
 
 const fontDir = join(import.meta.dirname, "..", "resources", "fonts");
-// Keep in step with src/pdf/fonts.ts and resources/viewer/layers.mjs. Each family was checked to embed and render
-// correctly through pdf-lib's fontkit (fonts with contextual alternates, such as Caveat or JetBrains Mono, do not).
-const FAMILIES = [
-  { name: "Roboto", npm: "roboto", version: "0.4.3", ofl: "roboto" },
-  { name: "Lora", npm: "lora", version: "0.4.2", ofl: "lora" },
-  { name: "ComicNeue", npm: "comic-neue", version: "0.4.1", ofl: "comicneue" },
-];
 const STYLES = Object.entries({ Regular: "400Regular", Bold: "700Bold", Italic: "400Regular_Italic", BoldItalic: "700Bold_Italic" });
+const REGULAR = STYLES.slice(0, 1);
+// Text-box fonts: keep in step with src/pdf/fonts.ts and resources/viewer/layers.mjs. Each family was checked to embed and
+// render correctly through pdf-lib's fontkit (fonts with contextual alternates, such as Caveat or JetBrains Mono, do not).
+// Signature fonts (SIGNATURE_FONTS in layers.mjs) are only drawn onto an image in the viewer, so one face each will do.
+// `license` is the license's path in github.com/google/fonts, saved as e.g. OFL-Roboto.txt.
+const FAMILIES = [
+  { name: "Roboto", npm: "roboto", version: "0.4.3", license: "ofl/roboto/OFL.txt", styles: STYLES },
+  { name: "Lora", npm: "lora", version: "0.4.2", license: "ofl/lora/OFL.txt", styles: STYLES },
+  { name: "ComicNeue", npm: "comic-neue", version: "0.4.1", license: "ofl/comicneue/OFL.txt", styles: STYLES },
+  { name: "Birthstone", npm: "birthstone", version: "0.4.2", license: "ofl/birthstone/OFL.txt", styles: REGULAR },
+  { name: "Allison", npm: "allison", version: "0.4.2", license: "ofl/allison/OFL.txt", styles: REGULAR },
+  { name: "Yellowtail", npm: "yellowtail", version: "0.4.1", license: "apache/yellowtail/LICENSE.txt", styles: REGULAR },
+  { name: "GreatVibes", npm: "great-vibes", version: "0.4.1", license: "ofl/greatvibes/OFL.txt", styles: REGULAR },
+];
+const licenseFile = (family) => `${basename(family.license, ".txt")}-${family.name}.txt`;
 
 mkdirSync(fontDir, { recursive: true });
 for (const family of FAMILIES) {
-  const wanted = [...STYLES.map(([style]) => `${family.name}-${style}.ttf`), `OFL-${family.name}.txt`];
+  const wanted = [...family.styles.map(([style]) => `${family.name}-${style}.ttf`), licenseFile(family)];
   if (wanted.every((file) => existsSync(join(fontDir, file)))) {
     continue;
   }
@@ -92,14 +100,22 @@ for (const family of FAMILIES) {
   const work = mkdtempSync(join(tmpdir(), "pdf-fonts-"));
   const archive = join(work, "package.tgz");
   writeFileSync(archive, Buffer.from(await res.arrayBuffer()));
-  const members = STYLES.map(([, weight]) => `package/${weight}/${family.name}_${weight}.ttf`);
+  const members = family.styles.map(([, weight]) => `package/${weight}/${family.name}_${weight}.ttf`);
   execFileSync("tar", ["-xzf", archive, "-C", work, ...members]);
-  for (const [i, [style]] of STYLES.entries()) {
+  for (const [i, [style]] of family.styles.entries()) {
     copyFileSync(join(work, members[i]), join(fontDir, `${family.name}-${style}.ttf`));
   }
   rmSync(work, { recursive: true, force: true });
-  const license = await fetch(`https://raw.githubusercontent.com/google/fonts/main/ofl/${family.ofl}/OFL.txt`);
+  const license = await fetch(`https://raw.githubusercontent.com/google/fonts/main/${family.license}`);
   assert.ok(license.ok, `${family.name} license: HTTP ${license.status}`);
-  writeFileSync(join(fontDir, `OFL-${family.name}.txt`), await license.text());
+  writeFileSync(join(fontDir, licenseFile(family)), await license.text());
+}
+// Fonts dropped from the list would otherwise still be packaged.
+const keep = new Set(FAMILIES.flatMap((family) => [...family.styles.map(([style]) => `${family.name}-${style}.ttf`), licenseFile(family)]));
+for (const file of readdirSync(fontDir)) {
+  if (!keep.has(file)) {
+    rmSync(join(fontDir, file));
+    console.log(`Removed ${file}`);
+  }
 }
 console.log("Fonts in place");

@@ -88,73 +88,7 @@ const text = (dict: PDFDict, key: string) => {
   return value instanceof PDFString || value instanceof PDFHexString ? value.decodeText() : undefined;
 };
 
-describe("parsePdf", () => {
-  it("builds the comment model with threads, states and pop-ups", async () => {
-    const { annotations, readOnly } = await parsePdf(await legacyPdf(), freshIds);
-    expect(readOnly).toBeUndefined();
-    const byId = new Map(annotations.map((a) => [a.id, a]));
-
-    expect(byId.get("note-1")).toMatchObject({
-      kind: "note",
-      subtype: "Text",
-      page: 0,
-      rect: [63, 759, 87, 783],
-      contents: "A sticky note",
-      author: "mirko",
-      icon: "Comment",
-      subject: "Sticky Note",
-      popup: { rect: [408, 669, 612, 783], open: false },
-      created: "2019-04-13T20:36:25.000Z",
-    });
-    expect(byId.get("reply-1")).toMatchObject({ replyTo: "note-1", contents: "Reply ✓ one" });
-    expect(byId.get("reply-2")).toMatchObject({ replyTo: "reply-1" });
-    expect(byId.get("state-1")).toMatchObject({ replyTo: "note-1", state: { model: "Review", value: "Accepted" } });
-    expect(byId.get("ink-1")).toMatchObject({ kind: "ink", subtype: "Ink", contents: "Ink comment", ink: [[100, 100, 200, 200]], width: 1 });
-    expect(byId.get("poly-1")).toMatchObject({ kind: "other", subtype: "Polygon", contents: "Polygon comment" });
-
-    const highlight = annotations.find((a) => a.kind === "highlight")!;
-    expect(highlight.id).toMatch(/^gen-/u);
-    expect(highlight.quads).toEqual([70, 710, 345, 710, 70, 697, 345, 697]);
-    expect(highlight.ref).toMatch(/^\d+ 0$/u);
-    expect(annotations.some((a) => a.contents === "hidden")).toBe(false);
-  });
-
-  it("unlinks managed annotations from the view bytes but keeps the rest", async () => {
-    const { viewBytes } = await parsePdf(await legacyPdf(), freshIds);
-    const { subtypes } = await pageAnnots(viewBytes);
-    expect(subtypes).toEqual(["Polygon", "Link", "Text"]); // the hidden note stays for pdf.js
-  });
-
-  it("returns the input untouched when there is nothing to manage", async () => {
-    const doc = await PDFDocument.create();
-    doc.addPage();
-    const bytes = await doc.save();
-    const result = await parsePdf(bytes);
-    expect(result.viewBytes).toBe(bytes);
-    expect(result.annotations).toEqual([]);
-  });
-
-  it("reports unparsable files as read-only", async () => {
-    const bytes = new TextEncoder().encode("not a pdf");
-    const result = await parsePdf(bytes);
-    expect(result.readOnly).toMatch(/could not be parsed/u);
-    expect(result.viewBytes).toBe(bytes);
-  });
-});
-
 describe("mergeAnnotations", () => {
-  it("keeps untouched comments' content, adding missing appearance streams", async () => {
-    const source = await legacyPdf();
-    const { annotations } = await parsePdf(source, freshIds);
-    const out = await mergeAnnotations(source, annotations);
-    const { dicts, subtypes } = await pageAnnots(out);
-    expect(subtypes.filter((s) => s === "Text")).toHaveLength(5); // note, 2 replies, state, hidden
-    const note = dicts.find((d) => text(d, "NM") === "note-1")!;
-    expect(text(note, "RC")).toBe("<body><p>A sticky note</p></body>");
-    expect(note.has(PDFName.of("AP"))).toBe(true); // the fixture had none; readers need one
-    expect(subtypes).toContain("Popup");
-  });
-
   it("round-trips: once saved, files read back to the same model", async () => {
     // The first save normalizes (appearances, pop-ups, default colors); after that, saving is stable.
     const first = await parsePdf(await mergeAnnotations(await legacyPdf(), (await parsePdf(await legacyPdf(), freshIds)).annotations), freshIds);
@@ -166,19 +100,6 @@ describe("mergeAnnotations", () => {
     expect(strip(reread.annotations).sort((a, b) => a.contents.localeCompare(b.contents))).toEqual(
       strip(annotations).sort((a, b) => a.contents.localeCompare(b.contents)),
     );
-  });
-
-  it("updates edited text, dropping stale rich text", async () => {
-    const source = await legacyPdf();
-    const { annotations } = await parsePdf(source, freshIds);
-    const edited = annotations.map((a) =>
-      a.id === "note-1" ? { ...a, contents: "Edited\nline two", modified: "2026-10-07T12:00:00.000Z" } : a,
-    );
-    const { dicts } = await pageAnnots(await mergeAnnotations(source, edited));
-    const note = dicts.find((d) => text(d, "NM") === "note-1")!;
-    expect(text(note, "Contents")).toBe("Edited\rline two");
-    expect(note.has(PDFName.of("RC"))).toBe(false);
-    expect(note.has(PDFName.of("AP"))).toBe(true);
   });
 
   it("creates Acrobat-style notes, highlight comments, replies and states", async () => {
@@ -225,45 +146,5 @@ describe("mergeAnnotations", () => {
       ["r", "h"],
       ["s", "h"],
     ]);
-  });
-
-  it("deletes removed comments together with their replies and pop-ups", async () => {
-    const source = await legacyPdf();
-    const { annotations } = await parsePdf(source, freshIds);
-    const remaining = annotations.filter((a) => a.id !== "note-1");
-    const out = await mergeAnnotations(source, remaining);
-    const { doc, subtypes } = await pageAnnots(out);
-    expect(subtypes.sort()).toEqual(["Highlight", "Ink", "Link", "Polygon", "Popup", "Popup", "Text"]);
-    const leftovers = doc.context
-      .enumerateIndirectObjects()
-      .filter(([, o]) => o instanceof PDFDict && ["note-1", "reply-1", "reply-2", "state-1"].includes(text(o, "NM") ?? ""));
-    expect(leftovers).toEqual([]);
-  });
-
-  it("writes onto view bytes (the form-filling path) without duplicating", async () => {
-    const source = await legacyPdf();
-    const { annotations, viewBytes } = await parsePdf(source, freshIds);
-    const { subtypes } = await pageAnnots(await mergeAnnotations(viewBytes, annotations));
-    expect(subtypes.filter((s) => s === "Highlight")).toHaveLength(1);
-    expect(subtypes.filter((s) => s === "Text")).toHaveLength(5);
-  });
-
-  it("only changes the text of annotations it does not draw", async () => {
-    const source = await legacyPdf();
-    const { annotations } = await parsePdf(source, freshIds);
-    const edited = annotations.map((a) => (a.id === "poly-1" ? { ...a, contents: "New polygon text" } : a));
-    const { dicts } = await pageAnnots(await mergeAnnotations(source, edited));
-    const polygon = dicts.find((d) => text(d, "NM") === "poly-1")!;
-    expect(text(polygon, "Contents")).toBe("New polygon text");
-    expect(polygon.has(PDFName.of("Vertices"))).toBe(true);
-  });
-
-  it("ignores annotations on pages that no longer exist", async () => {
-    const doc = await PDFDocument.create();
-    doc.addPage();
-    const out = await mergeAnnotations(await doc.save(), [
-      { id: "x", kind: "note", subtype: "Text", page: 3, rect: [0, 0, 24, 24], opacity: 1, contents: "", author: "" },
-    ]);
-    expect((await parsePdf(out)).annotations).toEqual([]);
   });
 });

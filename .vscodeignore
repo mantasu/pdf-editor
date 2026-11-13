@@ -6,7 +6,11 @@
 !resources/pdf.js/LICENSE
 !resources/fonts/**
 !resources/media/icon.png
-!node_modules/mathjax-full/es5/tex-svg-full.js
+!node_modules/@mathjax/src/bundle/tex-svg-nofont.js
+!node_modules/@mathjax/src/bundle/input/tex/extensions/**
+!node_modules/@mathjax/mathjax-tex-font/svg.js
+!node_modules/@mathjax/mathjax-mhchem-font-extension/svg.js
+!node_modules/@mathjax/src/LICENSE
 !package.json
 !README.md
 !LICENSE

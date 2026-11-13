@@ -98,7 +98,7 @@ export class HtmlBuilder {
     return {
       pdfJsBuild: `${asset("pdf.js", "build")}/`,
       pdfJsWeb: `${asset("pdf.js", "web")}/`,
-      mathJax: asset("..", "node_modules", "mathjax-full", "es5", "tex-svg-full.js"),
+      mathJax: `${asset("..", "node_modules", "@mathjax")}/`,
       fonts: `${asset("fonts")}/`,
       documentUrl: webview.asWebviewUri(documentUri).toString(true),
       resourceRoot: `${webview.asWebviewUri(folder).toString(true).replace(/\/$/u, "")}/`,

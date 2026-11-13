@@ -76,7 +76,6 @@ export const files = new Map<string, Uint8Array>();
 export const configuration = new Map<string, unknown>();
 export const shownErrors: string[] = [];
 export const shownWarnings: string[] = [];
-export const statusMessages: string[] = [];
 export const openedExternally: Uri[] = [];
 export const executedCommands: Array<{ command: string; args: unknown[] }> = [];
 export const registeredCommands = new Map<string, (...args: unknown[]) => unknown>();
@@ -116,14 +115,13 @@ export const workspace = {
 
 export const window = {
   registerCustomEditorProvider: vi.fn(() => ({ dispose: vi.fn() })),
-  setStatusBarMessage: vi.fn((message: string) => {
-    statusMessages.push(message);
-    return { dispose: vi.fn() };
-  }),
+  setStatusBarMessage: vi.fn(() => ({ dispose: vi.fn() })),
   showErrorMessage: vi.fn(async (message: string) => void shownErrors.push(message)),
   showWarningMessage: vi.fn(async (message: string) => void shownWarnings.push(message)),
   /** Answers with `quickPick.choose(items)`; by default nothing is picked. */
   showQuickPick: vi.fn(async <T>(items: T[], _options?: unknown) => quickPick.choose(items) as T | undefined),
+  /** Cancelled unless a test answers it. */
+  showSaveDialog: vi.fn(async (_options?: unknown): Promise<Uri | undefined> => undefined),
 };
 
 export const quickPick: { choose: (items: unknown[]) => unknown } = { choose: () => undefined };
@@ -234,7 +232,6 @@ export function resetMock(): void {
   drain(watchers);
   drain(shownErrors);
   drain(shownWarnings);
-  drain(statusMessages);
   drain(openedExternally);
   drain(executedCommands);
   drain(languageModels);

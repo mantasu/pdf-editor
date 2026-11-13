@@ -21,6 +21,8 @@ export type ToHost =
   | { type: "command"; command: string; args?: unknown[] }
   | { type: "open"; url: string }
   | { type: "preferences"; preferences: Prefs }
+  /** A drawing, picture or signature as PNG, to save where the user picks; `name` is what it is ("Signature"). */
+  | { type: "save-image"; name: string; data: Uint8Array }
   /** A question about a selected passage; answered with copilot-text chunks, then copilot-done. */
   | { type: "copilot"; requestId: number; action: AskAction; question?: string; selection: string; pageText: string; page: number }
   | { type: "copilot-cancel"; requestId: number }
@@ -53,7 +55,7 @@ export interface ViewerConfig {
   pdfJsBuild: string;
   /** Webview URI of the pdf.js `web/` directory, trailing slash. */
   pdfJsWeb: string;
-  /** Webview URI of MathJax's browser bundle, loaded when maths first shows. */
+  /** Webview URI of node_modules/@mathjax (MathJax 4's browser bundle and its TeX font), trailing slash; loaded when maths first shows. */
   mathJax: string;
   /** Webview URI of resources/fonts (the text-box fonts), trailing slash. */
   fonts: string;

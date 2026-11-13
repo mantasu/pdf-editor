@@ -288,22 +288,38 @@ const svgCache = new Map();
 export const containsMath = (text) => new RegExp(FORMULA.source, "u").test(text);
 export const mathLoaded = () => mathJaxReady;
 
-/** Load MathJax on first call; the promise settles once formulas can be typeset. */
+/** TEX_PACKAGES in src/pdf/math.ts: the viewer and the saved PDF must read TeX alike. */
+const TEX_PACKAGES = [
+  "base", "action", "ams", "amscd", "bbox", "boldsymbol", "braket", "bussproofs", "cancel", "cases", "centernot", "color", "colortbl", "configmacros",
+  "empheq", "enclose", "extpfeil", "gensymb", "html", "mathtools", "mhchem", "newcommand", "noerrors", "noundefined", "tagformat", "textcomp",
+  "textmacros", "unicode", "upgreek", "verb",
+];
+
+/**
+ * Load MathJax 4 on first call; the promise settles once formulas can be typeset. Its TeX font and packages are loaded
+ * up front from the extension (not a CDN), so typesetting stays synchronous; the menu and assistive add-ons, which
+ * would fetch more, stay off.
+ */
 export function loadMathJax() {
   mathJaxLoading ??= new Promise((resolve, reject) => {
     globalThis.MathJax = {
-      loader: { load: [] },
+      loader: {
+        paths: { fonts: config.mathJax.replace(/\/$/u, "") },
+        load: TEX_PACKAGES.filter((name) => name !== "base").map((name) => `[tex]/${name}`),
+      },
       startup: { typeset: false },
-      options: { enableMenu: false },
+      options: { enableMenu: false, enableEnrichment: false, enableSpeech: false, enableBraille: false, enableExplorer: false, enableAssistiveMml: false, enableComplexity: false },
       tex: {
+        packages: TEX_PACKAGES,
         formatError: (_jax, error) => {
           throw error;
         },
       },
+      output: { font: "mathjax-tex" },
       svg: { fontCache: "none" },
     };
     const onload = () => globalThis.MathJax.startup.promise.then(resolve, reject);
-    document.head.append(h("script", { src: config.mathJax, async: true, onerror: reject, onload }));
+    document.head.append(h("script", { src: `${config.mathJax}src/bundle/tex-svg-nofont.js`, async: true, onerror: reject, onload }));
   }).then(() => {
     mathJaxReady = true;
     for (const placeholder of document.querySelectorAll(".pdf-math-pending")) {

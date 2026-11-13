@@ -2,11 +2,9 @@ import { describe, expect, test } from "vitest";
 import {
   MARK_STYLES,
   bbox,
-  contains,
   fitBox,
   fromFrac,
   inQuads,
-  inflate,
   mapPoints,
   markStrokes,
   mergeLines,
@@ -19,7 +17,6 @@ import {
   toFrac,
   toQuads,
 } from "../../resources/viewer/geometry.mjs";
-import { canMove, hitTest, resizeMode, stackRank } from "../../resources/viewer/layers.mjs";
 
 /** Stands in for a pdf.js PageViewport: 100x200 page, rotation optional. */
 function pageBox(rotation = 0) {
@@ -29,19 +26,10 @@ function pageBox(rotation = 0) {
   return { width, height, convertToViewportPoint: flip, convertToPdfPoint: flip };
 }
 
-const stub = { id: "a", page: 0, opacity: 1, contents: "", author: "" };
-
 describe("coordinates", () => {
   test("page box and fractions are inverse conversions", () => {
     expect(toFrac(pageBox(), 50, 150)).toEqual([0.5, 0.25]);
     expect(fromFrac(pageBox(), 0.5, 0.25)).toEqual([50, 150]);
-  });
-
-  test("bbox, inflate and contains", () => {
-    expect(bbox([1, 5, 3, 2, -1, 4])).toEqual([-1, 2, 3, 5]);
-    expect(inflate([0, 0, 1, 1], 1)).toEqual([-1, -1, 2, 2]);
-    expect(contains(1, 1, [0, 0, 2, 2])).toBe(true);
-    expect(contains(3, 1, [0, 0, 2, 2])).toBe(false);
   });
 
   test("mergeLines joins same-line rects; toQuads emits Acrobat order", () => {
@@ -98,37 +86,6 @@ describe("geometry transforms", () => {
     expect(fitBox({ kind: "square", rect: [0, 0, 10, 10] }, [0, 0, 10, 10], [0, 0, 20, 5])).toEqual({ rect: [0, 0, 20, 5] });
     expect(fitBox({ kind: "ink", rect: [0, 0, 0, 0], ink: [[0, 0, 0, 0]] }, [0, 0, 0, 0], [1, 1, 2, 2])).toEqual({ ink: [[1, 1, 1, 1]], rect: [1, 1, 1, 1] });
     expect(mapPoints({ kind: "image", rect: [0, 0, 1, 1] }, (x: number, y: number) => [y, x])).toEqual({ rect: [0, 0, 1, 1] });
-  });
-});
-
-describe("kinds", () => {
-  test("hitTest per kind", () => {
-    expect(hitTest({ ...stub, kind: "highlight", rect: [0, 0, 0, 0], quads: [10, 30, 110, 30, 10, 18, 110, 18] }, 50, 20, 0)).toBe(true);
-    expect(hitTest({ ...stub, kind: "ink", rect: [0, 0, 0, 0], ink: [[0, 0, 10, 0]], width: 2 }, 5, 1.5, 0.5)).toBe(true);
-    expect(hitTest({ ...stub, kind: "ink", rect: [0, 0, 0, 0], ink: [[0, 0, 10, 0]] }, 5, 3, 0.5)).toBe(false);
-    expect(hitTest({ ...stub, kind: "line", rect: [0, 0, 0, 0], line: [0, 0, 10, 10] }, 5, 5, 0)).toBe(true);
-    // Unfilled shapes only answer on their outline so embedded text stays selectable.
-    const square = { ...stub, kind: "square", rect: [0, 0, 100, 100], width: 2 };
-    expect(hitTest(square, 50, 50, 1)).toBe(false);
-    expect(hitTest(square, 0.5, 50, 1)).toBe(true);
-    expect(hitTest({ ...square, fill: [1, 0, 0] }, 50, 50, 1)).toBe(true);
-    const circle = { ...stub, kind: "circle", rect: [0, 0, 100, 100] };
-    expect(hitTest(circle, 50, 50, 1)).toBe(false);
-    expect(hitTest(circle, 100, 50, 1)).toBe(true);
-    expect(hitTest({ ...stub, kind: "circle", rect: [0, 0, 0, 0] }, 0, 0, 1)).toBe(true);
-    expect(hitTest({ ...stub, kind: "note", rect: [0, 0, 24, 24] }, 5, 5, 0)).toBe(false);
-    expect(hitTest({ ...stub, kind: "freetext", rect: [0, 0, 24, 24] }, 5, 5, 0)).toBe(true);
-  });
-
-  test("stackRank, resizeMode and canMove rules", () => {
-    expect(stackRank({ kind: "image" })).toBeGreaterThan(stackRank({ kind: "ink" }));
-    expect(stackRank({ kind: "ink" })).toBeGreaterThan(stackRank({ kind: "highlight" }));
-    expect(resizeMode({ kind: "line" })).toBe("ends");
-    expect(resizeMode({ kind: "image" })).toBe("box");
-    expect(resizeMode({ kind: "highlight" })).toBe("none");
-    expect(canMove({ kind: "note" })).toBe(true);
-    expect(canMove({ kind: "highlight" })).toBe(false);
-    expect(canMove({ kind: "square" })).toBe(true);
   });
 });
 

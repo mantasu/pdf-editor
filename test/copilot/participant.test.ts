@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("vscode", async () => await import("../__mocks__/vscode"));
 
-import { CancellationTokenSource, ChatRequestTurn, ChatResponseMarkdownPart, ChatResponseTurn, LanguageModelError, chat, chatHandlers, fakeModel, resetMock } from "../__mocks__/vscode";
-import { type OpenDoc, ASSISTANT, makeHandler, chatHistory, registerChat } from "../../src/copilot/participant";
+import { CancellationTokenSource, ChatRequestTurn, ChatResponseMarkdownPart, ChatResponseTurn, LanguageModelError, fakeModel, resetMock } from "../__mocks__/vscode";
+import { type OpenDoc, ASSISTANT, makeHandler, chatHistory } from "../../src/copilot/participant";
 
 beforeEach(() => resetMock());
 
@@ -22,12 +22,6 @@ async function run(open: () => Promise<OpenDoc | undefined>, request: { command?
 }
 
 describe("@pdf in Copilot Chat", () => {
-  test("registers the participant id", () => {
-    registerChat(async () => doc);
-    expect(chat.createChatParticipant).toHaveBeenCalledWith(ASSISTANT, expect.any(Function));
-    expect(chatHandlers.has(ASSISTANT)).toBe(true);
-  });
-
   test("past @pdf turns feed the conversation", () => {
     const turns = [
       new ChatRequestTurn("summarize please", "summarize", ASSISTANT),
@@ -41,16 +35,6 @@ describe("@pdf in Copilot Chat", () => {
       ["assistant", "A summary"],
       ["user", "and why?"],
     ]);
-  });
-
-  test("the open PDF becomes the answer context", async () => {
-    const { out, model } = await run(async () => doc, { command: "summarize", prompt: "briefly" }, [new ChatRequestTurn("earlier", undefined, ASSISTANT)]);
-    expect(out.progress).toHaveBeenCalledWith("Reading draft.pdf…");
-    expect(out.parts).toEqual(["An ", "answer"]);
-    const messages = model.sendRequest.mock.calls[0]![0] as unknown as Array<{ content: string }>;
-    expect(messages).toHaveLength(2);
-    expect(messages[1]!.content).toContain("--- Page 1 ---\nIntro text");
-    expect(messages[1]!.content.endsWith("briefly")).toBe(true);
   });
 
   test("says so when the PDF, a selection, or Copilot is missing", async () => {

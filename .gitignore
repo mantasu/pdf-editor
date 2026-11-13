@@ -8,7 +8,7 @@ dist/
 *.vsix
 package-lock.json
 
-# Vendored pdf.js + fontsW
+# Vendored pdf.js + fonts
 resources/pdf.js/
 resources/fonts/
 

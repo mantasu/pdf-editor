@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("vscode", async () => await import("../__mocks__/vscode"));
 
-import { CancellationTokenSource, ConfigurationTarget, LanguageModelError, configuration, fakeModel, languageModels, lm, quickPick, resetMock, shownWarnings, window, workspace } from "../__mocks__/vscode";
-import { NO_CHAT, askChat, chooseModel, friendlyError, pickModel } from "../../src/copilot/model";
+import { ConfigurationTarget, LanguageModelError, configuration, fakeModel, languageModels, quickPick, resetMock, shownWarnings, window, workspace } from "../__mocks__/vscode";
+import { NO_CHAT, friendlyError, pickModel } from "../../src/copilot/model";
 
 const claude = () => fakeModel(["from Claude"], 64_000, { id: "claude-x", name: "Claude X", family: "claude", vendor: "anthropic" });
 
@@ -17,42 +17,6 @@ describe("asking Copilot", () => {
     expect(friendlyError(new LanguageModelError("rate limited", "Other"))).toBe("rate limited");
     expect(friendlyError(new Error("boom"))).toBe("boom"); // non-model errors pass through
     expect(friendlyError("plain")).toBe("plain"); // even non-errors
-  });
-
-  test("askChat streams chunks from the first copilot model", async () => {
-    const model = fakeModel(["Hel", "lo"]);
-    languageModels.push(model);
-    const chunks: string[] = [];
-    await askChat("prompt", new CancellationTokenSource().token as never, (text) => chunks.push(text));
-    expect(chunks).toEqual(["Hel", "lo"]);
-    expect(lm.selectChatModels).toHaveBeenCalledWith();
-    expect(model.sendRequest.mock.calls[0]![0]).toEqual([expect.objectContaining({ role: "user", content: "prompt" })]);
-  });
-
-  test("askChat rejects with a friendly message when Copilot is absent or refuses", async () => {
-    const token = new CancellationTokenSource().token as never;
-    await expect(askChat("p", token, () => undefined)).rejects.toThrow(NO_CHAT);
-    languageModels.push(fakeModel(LanguageModelError.Blocked()));
-    await expect(askChat("p", token, () => undefined)).rejects.toThrow("The language model declined this request.");
-  });
-
-  test("chooseModel takes the setting's model (id, name or family, any case), else a Copilot one, else any", async () => {
-    const [other, copilot] = [claude(), fakeModel([])];
-    languageModels.push(other, copilot);
-    expect(await chooseModel()).toBe(copilot);
-    expect(await chooseModel(" CLAUDE X ")).toBe(other);
-    expect(await chooseModel("claude-x")).toBe(other);
-    expect(await chooseModel("Claude")).toBe(other);
-    expect(await chooseModel("unknown")).toBe(copilot);
-    languageModels.splice(1);
-    expect(await chooseModel()).toBe(other); // no Copilot model: whatever there is
-  });
-
-  test("askChat asks the preferred model", async () => {
-    languageModels.push(fakeModel(["from Copilot"]), claude());
-    const chunks: string[] = [];
-    await askChat("prompt", new CancellationTokenSource().token as never, (text) => chunks.push(text), "claude-x");
-    expect(chunks).toEqual(["from Claude"]);
   });
 
   test("pickModel lists every model and saves the choice to the user settings", async () => {

@@ -42,6 +42,18 @@ const VERTICAL_SOURCES = {
 const FONT_FILES = { Roboto: "Roboto", Lora: "Lora", "Comic Neue": "ComicNeue" };
 
 /**
+ * Handwriting for typed signatures, from simple to fancy, as [style, family]: one Regular face each in resources/fonts
+ * (the family without spaces). All four write the accented letters of Latin-1 and Latin Extended-A (French, Polish,
+ * Lithuanian...), Great Vibes also Cyrillic; insert.mjs offers a style only for names its font can write whole.
+ */
+export const SIGNATURE_FONTS = [
+  ["Simple", "Birthstone"],
+  ["Natural", "Allison"],
+  ["Bold", "Yellowtail"],
+  ["Fancy", "Great Vibes"],
+];
+
+/**
  * Fonts for pdf.js's invisible text layer, which selection and new marks are measured from. pdf.js places each
  * line by its font's ascent, and the system fallbacks differ (Arial on Windows has far more room above the
  * letters than Helvetica on macOS), so these pin the metrics with ascent and descent overrides (TEXT_LAYER_METRICS).
@@ -63,6 +75,9 @@ export function installFonts() {
   const rules = Object.entries(FONT_FILES).flatMap(([family, file]) =>
     styles.map(([style, weight, slope]) => `@font-face { font-family: "${family}"; src: url("${config.fonts}${file}-${style}.ttf") format("truetype"); font-weight: ${weight}; font-style: ${slope}; font-display: swap; }`),
   );
+  for (const [, family] of SIGNATURE_FONTS) {
+    rules.push(`@font-face { font-family: "${family}"; src: url("${config.fonts}${family.replaceAll(" ", "")}-Regular.ttf") format("truetype"); }`);
+  }
   for (const [family, sources] of Object.entries(VERTICAL_SOURCES)) {
     rules.push(`@font-face { font-family: "${VERTICAL_FACE}${family}"; src: ${sources.replaceAll("${fonts}", config.fonts)}; ascent-override: 80%; descent-override: 20%; line-gap-override: 0%; }`);
   }
@@ -578,6 +593,60 @@ export function screenBox(a) {
   }
   const page = ui.getBoundingClientRect();
   return new DOMRect(page.left + box[0] * page.width, page.top + box[1] * page.height, (box[2] - box[0]) * page.width, (box[3] - box[1]) * page.height);
+}
+
+// --- Saving as a picture ---------------------------------------------------------------
+
+/** Drawings, lines, shapes and pictures can be saved as PNG; signatures are drawings or pictures too. */
+export const canExport = (a) => ["ink", "line", "square", "circle", "image"].includes(a.kind);
+
+/** Drawings are saved at 4 pixels per point (288 dpi), pictures at their own resolution; either at most this many pixels a side. */
+const EXPORT_SCALE = 4;
+const MAX_EXPORT_SIDE = 4096;
+
+/**
+ * A drawing, shape, picture or signature as PNG bytes, drawn as on screen and turned as its page is shown, cropped to
+ * it (with room for the pen and arrowheads) on a transparent background.
+ */
+export async function annotationPng(a) {
+  const viewport = baseViewport(a.page);
+  const isImage = a.kind === "image";
+  // The pen reaches half its width past the points, an arrowhead's barbs half their length (drawLine) to the side.
+  const pen = a.width ?? 1;
+  const reach = isImage ? 0 : pen / 2 + (a.arrow ? Math.max(6, pen * 4) / 2 : 0);
+  const [fx1, fy1, fx2, fy2] = fracBox(a, viewport);
+  const box = [fx1 * viewport.width - reach, fy1 * viewport.height - reach, (fx2 - fx1) * viewport.width + 2 * reach, (fy2 - fy1) * viewport.height + 2 * reach];
+  const fit = MAX_EXPORT_SIDE / Math.max(box[2], box[3]);
+  const [rw, rh] = [a.rect[2] - a.rect[0], a.rect[3] - a.rect[1]];
+  const drawingScale = Math.min(EXPORT_SCALE, fit);
+  const picture = await loadImage(isImage ? a.image : drawingSvg(a, viewport, box, drawingScale));
+  const scale = isImage ? Math.min(picture.naturalWidth / rw, fit) : drawingScale;
+  const canvas = Object.assign(document.createElement("canvas"), { width: Math.max(1, Math.round(box[2] * scale)), height: Math.max(1, Math.round(box[3] * scale)) });
+  const context = canvas.getContext("2d");
+  if (isImage) {
+    context.globalAlpha = a.opacity ?? 1;
+    context.translate(canvas.width / 2, canvas.height / 2);
+    context.rotate((viewport.rotation * Math.PI) / 180);
+    context.drawImage(picture, (-rw * scale) / 2, (-rh * scale) / 2, rw * scale, rh * scale);
+  } else {
+    context.drawImage(picture, 0, 0, canvas.width, canvas.height);
+  }
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+/** A drawing alone in an SVG of `box` (viewport units), `scale` pixels per unit, as a data URL. */
+function drawingSvg(a, viewport, [x, y, width, height], scale) {
+  const root = svg("svg", { viewBox: `${x} ${y} ${width} ${height}`, width: width * scale, height: height * scale });
+  root.append(DRAWERS[a.kind][1](a, viewport));
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(root))}`;
+}
+
+async function loadImage(src) {
+  const img = new Image();
+  img.src = src;
+  await img.decode();
+  return img;
 }
 
 /** Scroll the viewer to an annotation, with a little room above its top edge. */

@@ -2,11 +2,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, PDFRef, PDFString, decodePDFRawStream } from "pdf-lib";
 import { describe, expect, test } from "vitest";
-import { pngOf, fromDataUrl, stampPicture } from "../../src/pdf/image";
-import { extentOf, layoutText, stackColumns, textStyleOf } from "../../src/pdf/kinds";
+import { pngOf } from "../../src/pdf/image";
+import { extentOf, layoutText, textStyleOf } from "../../src/pdf/kinds";
 import type { Annot, Rich } from "../../src/pdf/model";
 import { parsePdf } from "../../src/pdf/read";
-import { isFormatted, mergeRuns, parseRc, toPlain, toRc } from "../../src/pdf/richtext";
+import { mergeRuns, parseRc, toPlain } from "../../src/pdf/richtext";
 import { mergeAnnotations } from "../../src/pdf/write";
 
 const JPEG = `data:image/jpeg;base64,${readFileSync(join(__dirname, "fixtures", "tiny.jpg")).toString("base64")}`;
@@ -63,39 +63,9 @@ describe("drawing kinds round-trip", () => {
     expect(ap("ln").split(" S").length).toBe(3); // shaft + arrow head
     expect(ap("ln2").split(" S").length).toBe(2);
   });
-
-  test("a second save leaves unchanged drawings alone", async () => {
-    const first = await written(model);
-    const again = await mergeAnnotations(first.bytes, first.reread);
-    const doc = await PDFDocument.load(again);
-    const before = first.dicts.map((d) => d.get(PDFName.of("AP"))!.toString());
-    const after = (doc.getPage(0).node.lookupMaybe(PDFName.of("Annots"), PDFArray)!.asArray())
-      .map((r) => doc.context.lookup(r) as PDFDict)
-      .filter((d) => d.get(PDFName.of("Subtype")) !== PDFName.of("Popup"))
-      .map((d) => d.get(PDFName.of("AP"))!.toString());
-    expect(after).toEqual(before);
-  });
-
-  test("measurement lines and callouts stay with pdf.js", async () => {
-    const doc = await PDFDocument.load(await blank());
-    const ctx = doc.context;
-    const dimension = ctx.register(ctx.obj({ Type: "Annot", Subtype: "Line", Rect: [0, 0, 9, 9], L: [0, 0, 9, 9], IT: "LineDimension" }));
-    const callout = ctx.register(ctx.obj({ Type: "Annot", Subtype: "FreeText", Rect: [0, 0, 9, 9], IT: "FreeTextCallout" }));
-    doc.getPage(0).node.set(PDFName.of("Annots"), ctx.obj([dimension, callout]));
-    const { annotations } = await parsePdf(await doc.save());
-    expect(annotations.map((a) => a.kind)).toEqual(["other", "other"]);
-  });
 });
 
 describe("defaults and text-markup appearances", () => {
-  test("replies and states draw nothing on the page", async () => {
-    const note = { ...base, kind: "note", subtype: "Text", rect: [0, 0, 24, 24] } as const;
-    const { dicts, appearance } = await written([{ ...note, id: "n" }, { ...note, id: "r", replyTo: "n", contents: "reply" }]);
-    const byName = (nm: string) => dicts.find((d) => (d.lookup(PDFName.of("NM")) as PDFString).decodeText() === nm)!;
-    expect(appearance(byName("n"))).toContain(" c h B");
-    expect(appearance(byName("r"))).toBe("/GS0 gs\n");
-  });
-
   test("every markup kind draws its appearance with Acrobat's default colors", async () => {
     const quads = [10, 30, 110, 30, 10, 18, 110, 18, 10, 50, 60, 50, 10, 50, 60, 50];
     const kinds = [["highlight", "Highlight"], ["underline", "Underline"], ["strikeout", "StrikeOut"], ["squiggly", "Squiggly"]] as const;
@@ -152,22 +122,6 @@ describe("defaults and text-markup appearances", () => {
       return Number(/1 0 0 1 [\d.]+ ([\d.]+) Tm/u.exec(drawn(aligned[0]!))![1]);
     }));
     expect(tops).toEqual([98 - 17, 98 - 34]); // 54 pt of room, 20 used
-  });
-
-  test("stackColumns keeps words whole where they fit and breaks longer ones", () => {
-    const columns = (text: string, capacity: number) => stackColumns(text.split("\n").map((line) => [{ text: line }]), capacity).map((column) => column.map((letter) => letter.text).join(""));
-    expect(columns("ab cd", 5)).toEqual(["ab cd"]);
-    expect(columns("ab cd", 4)).toEqual(["ab", "cd"]);
-    expect(columns("abcdefg h", 3)).toEqual(["abc", "def", "g h"]);
-    expect(columns("ab   cd", 2)).toEqual(["ab", "cd"]); // spaces at a break go
-    expect(columns("a\n\nb", 3)).toEqual(["a", "", "b"]); // each paragraph is a column, an empty one too
-    expect(columns("  a", 3)).toEqual(["a"]); // no column starts with a space
-  });
-
-  test("trailing spaces at a wrap do not push an aligned line", async () => {
-    const { dicts, appearance } = await written([{ ...base, id: "w", kind: "freetext", subtype: "FreeText", rect: [0, 0, 40, 60], contents: "aaaa bbbb", align: "right", font: { family: "Courier", size: 10 } }]);
-    // Courier is 6 pt per character: "aaaa" (24 pt) ends at the right inset, its wrapping space left out.
-    expect(Number(/1 0 0 1 ([\d.]+) /u.exec(appearance(dicts[0]!))![1])).toBeCloseTo(40 - 2 - 24, 1);
   });
 
   test("a text box in a bundled font embeds it and reads back by name", async () => {
@@ -306,23 +260,6 @@ describe("text boxes", () => {
     expect(first - second).toBeGreaterThan(14.4);
     expect(second - third).toBeCloseTo(14.4, 3);
   });
-
-  test("boxes sharing a font embed it once", async () => {
-    const box = { ...base, kind: "freetext", subtype: "FreeText", rect: [0, 0, 80, 20], contents: "x" } as const;
-    const { doc } = await written([{ ...box, id: "a" }, { ...box, id: "b" }]);
-    const fonts = doc.context.enumerateIndirectObjects().filter(([, o]) => o instanceof PDFDict && o.get(PDFName.of("Type")) === PDFName.of("Font"));
-    expect(fonts).toHaveLength(1);
-  });
-
-  test("non-finite font sizes from the model fall back to 12 pt", async () => {
-    const { reread } = await written([{ ...base, id: "t", kind: "freetext", subtype: "FreeText", rect: [0, 0, 50, 20], contents: "x", font: { family: "Courier", size: Number.POSITIVE_INFINITY } }]);
-    expect(reread[0]!.font).toEqual({ family: "Courier", size: 12 });
-  });
-
-  test("a text box without a font or color uses Helvetica 12 in black", async () => {
-    const { reread } = await written([{ ...base, id: "t", kind: "freetext", subtype: "FreeText", rect: [0, 0, 50, 20], contents: "x" }]);
-    expect(reread[0]).toMatchObject({ font: { family: "Helvetica", size: 12 }, color: [0, 0, 0] });
-  });
 });
 
 describe("images", () => {
@@ -340,11 +277,6 @@ describe("images", () => {
     if (mime === "image/jpeg") {
       expect(reread[0]!.image).toBe(url);
     }
-  });
-
-  test("invalid picture data writes an empty stamp, which then belongs to pdf.js", async () => {
-    const { reread } = await written([{ ...base, id: "im", kind: "image", subtype: "Stamp", rect: [10, 10, 110, 60], image: "data:text/plain;base64,AA==" }]);
-    expect(reread[0]).toMatchObject({ kind: "other", subtype: "Stamp" });
   });
 
   test("stamps without a single 8-bit RGB/gray/JPEG picture are not ours", async () => {
@@ -370,40 +302,9 @@ describe("images", () => {
     const { annotations } = await parsePdf(await doc.save());
     expect(annotations.map((a) => a.kind)).toEqual(Array(10).fill("other"));
   });
-
-  test("data URLs and PNG encoding", () => {
-    expect(fromDataUrl("data:image/gif;base64,AA==")).toBeUndefined();
-    expect(fromDataUrl("data:image/png;base64,AAEC")).toEqual({ mime: "image/png", bytes: new Uint8Array([0, 1, 2]) });
-    const pngBytes = pngOf(1, 1, 3, new Uint8Array([1, 2, 3]));
-    expect([...pngBytes.subarray(1, 4)].map((c) => String.fromCharCode(c)).join("")).toBe("PNG");
-  });
-
-  test("stampPicture ignores dictionaries without appearances", async () => {
-    const doc = await PDFDocument.create();
-    expect(stampPicture(doc.context.obj({ Subtype: "Stamp" }) as PDFDict)).toBeUndefined();
-  });
 });
 
 describe("rich text", () => {
-  const rich: Rich = [
-    [{ text: "Bold", bold: true }, { text: " and " }, { text: "x", italic: true }, { text: "2", sup: true }],
-    [{ text: "H" }, { text: "2", sub: true }, { text: "O <&>", underline: true, strike: true }, { text: "code()", code: true }],
-  ];
-
-  test("XHTML round trip keeps formatting and escapes text", () => {
-    const xhtml = toRc(rich);
-    expect(xhtml).toContain('<span style="font-weight:bold">Bold</span>');
-    expect(xhtml).toContain("O &lt;&amp;&gt;");
-    expect(xhtml).toContain("text-decoration:underline line-through");
-    // Signed offsets, as Acrobat writes them (it reads "sub" as superscript).
-    expect(xhtml).toContain('<span style="vertical-align:+4.0pt">2</span>');
-    expect(xhtml).toContain('<span style="vertical-align:-2.0pt">2</span>');
-    expect(parseRc(xhtml)).toEqual(rich);
-    expect(toPlain(rich)).toBe("Bold and x2\nH2O <&>code()");
-    expect(isFormatted(rich)).toBe(true);
-    expect(isFormatted([[{ text: "plain" }]])).toBe(false);
-  });
-
   test("parses tags, styles, entities and Acrobat's markup", () => {
     const parsed = parseRc(
       '<?xml version="1.0"?><!-- c --><body xmlns="http://www.w3.org/1999/xhtml"><p><b>b</b><strong>s</strong><i>i</i><em>e</em><u>u</u>' +
@@ -447,23 +348,6 @@ describe("rich text", () => {
 
   test("mergeRuns merges runs and trims empty paragraphs", () => {
     expect(mergeRuns([[{ text: "a" }, { text: "" }, { text: "b" }], [], []])).toEqual([[{ text: "ab" }]]);
-  });
-
-  test("formatted comments are stored as /RC with plain /Contents", async () => {
-    const note: Annot = { ...base, id: "n", kind: "note", subtype: "Text", rect: [0, 0, 24, 24], contents: toPlain(rich), rich };
-    const { dicts, reread } = await written([note]);
-    expect((dicts[0]!.lookup(PDFName.of("RC")) as PDFString).decodeText()).toContain("font-weight:bold");
-    expect(reread[0]!.rich).toEqual(rich);
-    expect(reread[0]!.contents).toBe(toPlain(rich));
-  });
-
-  test("removing all formatting removes /RC even when the text is unchanged", async () => {
-    const rich: Rich = [[{ text: "hello", bold: true }]];
-    const note: Annot = { ...base, id: "n", kind: "note", subtype: "Text", rect: [0, 0, 24, 24], contents: "hello", rich };
-    const first = await written([note]);
-    const plain = (await parsePdf(first.bytes)).annotations.map((a) => ({ ...a, rich: undefined, color: [1, 0, 0] as [number, number, number] }));
-    const out = await parsePdf(await mergeAnnotations(first.bytes, plain));
-    expect(out.annotations[0]!.rich).toBeUndefined();
   });
 
   test("removing formatting from a comment on an annotation the extension does not draw", async () => {

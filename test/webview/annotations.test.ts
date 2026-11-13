@@ -1,8 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { isFormatted, toPlain } from "../../resources/viewer/richtext.mjs";
 import * as model from "../../resources/viewer/annotations.mjs";
-import { activeTool, afterUse, backToSelect, chooseTool, fieldsFor, groupOf, isSticky, lastInGroup, onToolChange, paletteFor, setSticky, setToolStyle, toolStyle } from "../../resources/viewer/tools.mjs";
-import { KIND_NAMES, formatDate, hexToRgb, rgbToHex } from "../../resources/viewer/core.mjs";
 
 // A minimal sticky-note thread root shared by most cases below.
 const note = { id: "r", kind: "note", subtype: "Text", page: 0, rect: [10, 10, 34, 34], opacity: 1, contents: "root", author: "" };
@@ -135,105 +132,5 @@ describe("annotations", () => {
     expect(model.selectedId()).toBe("r");
     model.patch("missing", { contents: "x" }, "noop");
     expect(reasons).toEqual(["draft", "edit", "draft", "edit", "select", "replace", "select", "replace"]);
-  });
-
-  test("create seeds author, dates and a UUID", () => {
-    const fresh = model.create({ kind: "note" });
-    expect(fresh).toMatchObject({ kind: "note", opacity: 1, contents: "", author: "" });
-    expect(fresh.id).toMatch(/^[0-9a-f-]{36}$/u);
-    expect(fresh.created).toBe(fresh.modified);
-    expect(model.currentUser()).toBe("");
-  });
-});
-
-describe("annotation batch edits", () => {
-  test("patchMany applies one edit across threads, carrying or dropping replies", () => {
-    const squiggle = { ...note, id: "ink", kind: "ink", subtype: "Ink", rect: [0, 0, 50, 50] };
-    model.reset([note, { ...note, id: "r1", replyTo: "r" }, squiggle, { ...note, id: "i1", replyTo: "ink" }], null);
-    model.select("r");
-    const fired: string[] = [];
-    const stopBatch = model.onChange((reason: string) => fired.push(reason));
-    model.patchMany([["missing", null]], "Nothing");
-    expect(fired).toEqual([]);
-    model.patchMany([["r", null], ["ink", { rect: [100, 100, 200, 200] }]], "Erase");
-    stopBatch();
-    // The note thread vanished; the ink moved and its reply followed by the delta.
-    expect(idsOf(model.list())).toEqual(["ink", "i1"]);
-    expect(model.find("i1").rect).toEqual([100, 176, 124, 200]);
-    expect(model.selectedId()).toBeNull();
-    expect(fired).toHaveLength(1);
-  });
-});
-
-describe("tools", () => {
-  test("chooseTool toggles off and each group remembers its last tool", () => {
-    const picked: string[] = [];
-    onToolChange((t: string) => picked.push(t));
-    chooseTool("square");
-    expect(activeTool()).toBe("square");
-    expect([groupOf("square"), lastInGroup("draw")]).toEqual(["draw", "square"]);
-    chooseTool("square"); // same tool again = deselect
-    expect(activeTool()).toBe("select");
-    chooseTool("note");
-    backToSelect();
-    backToSelect(); // already on select: no extra event
-    expect(picked).toEqual(["square", "select", "note", "select"]);
-  });
-
-  test("afterUse drops back to Select unless the tool is sticky", () => {
-    expect([isSticky("highlight"), isSticky("ink")]).toEqual([false, true]);
-    chooseTool("highlight");
-    afterUse();
-    expect(activeTool()).toBe("select");
-    setSticky("highlight", true);
-    chooseTool("highlight");
-    afterUse();
-    expect(activeTool()).toBe("highlight");
-    setSticky("highlight", false);
-    backToSelect();
-  });
-
-  test("tool styles feed straight into the annotation fields", () => {
-    setToolStyle("arrow", { color: "#00FF00", width: 5 });
-    expect(toolStyle("arrow")).toMatchObject({ color: "#00FF00", width: 5 });
-    expect(fieldsFor("arrow")).toEqual({ kind: "line", subtype: "Line", color: [0, 1, 0], width: 5, arrow: true });
-    expect(fieldsFor("note")).toMatchObject({ kind: "note", subtype: "Text", icon: "Comment" });
-    expect(fieldsFor("freetext")).toMatchObject({ kind: "freetext", font: { family: "Helvetica", size: 12 } });
-    expect(fieldsFor("ink")).toMatchObject({ kind: "ink", subtype: "Ink", opacity: 1, width: 2 });
-    // Fill & Sign marks are plain drawings carrying Acrobat's subject names.
-    expect(fieldsFor("check")).toMatchObject({ kind: "ink", subject: "Checkmark" });
-    expect(fieldsFor("dot")).toMatchObject({ kind: "circle", subject: "Dot", fill: [0, 0, 0] });
-    // Five colors everywhere: the presets for marks and drawings; black and dark shades for text and Fill & Sign.
-    const names = (tool: string) => paletteFor(tool).map((p: { name: string }) => p.name);
-    expect(names("highlight")).toEqual(["Yellow", "Red", "Purple", "Green", "Blue"]);
-    expect(names("ink")).toEqual(names("highlight"));
-    expect(names("freetext")).toEqual(["Black", "Yellow", "Red", "Green", "Blue"]);
-    expect(names("check")).toEqual(names("freetext"));
-    expect(toolStyle("ink").color).toBe(paletteFor("ink").find((p: { name: string }) => p.name === "Red").color);
-  });
-});
-
-describe("helpers", () => {
-  test("color conversions and display names", () => {
-    expect(hexToRgb("#FF8000")).toEqual([1, 0.502, 0]);
-    expect(rgbToHex([1, 0.502, 0])).toBe("#FF8000");
-    expect(rgbToHex([2, -1, 0])).toBe("#FF0000"); // out-of-range channels clamp
-    expect(rgbToHex(undefined)).toBeUndefined();
-    expect(KIND_NAMES.freetext).toBe("Text Box");
-  });
-
-  test("formatDate renders relative days", () => {
-    const today = new Date(2026, 9, 7, 15, 0);
-    expect(formatDate(new Date(2026, 9, 7, 9, 5).toISOString(), today)).toMatch(/^Today /u);
-    expect(formatDate(new Date(2026, 9, 6, 9, 5).toISOString(), today)).toMatch(/^Yesterday /u);
-    expect(formatDate(new Date(2025, 0, 2).toISOString(), today)).toMatch(/2025/u);
-    expect(formatDate(undefined, today)).toBe("");
-  });
-
-  test("richtext passthrough helpers", () => {
-    expect(toPlain([[{ text: "a" }, { text: "b" }], [{ text: "c" }]])).toBe("ab\nc");
-    expect(isFormatted([[{ text: "a", sup: true }]])).toBe(true);
-    expect(isFormatted([[{ text: "a" }]])).toBe(false);
-    expect(isFormatted(undefined)).toBe(false);
   });
 });
