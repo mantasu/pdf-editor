@@ -2,7 +2,7 @@
   "name": "pdf-editor",
   "displayName": "PDF Viewer & Editor",
   "description": "Read, highlight, comment on and draw over PDFs in VS Code, Acrobat-compatible",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publisher": "mantasu",
   "icon": "resources/media/icon.png",
   "repository": {

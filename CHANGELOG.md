@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/mantasu/pdf-editor/compare/v1.1.0...v1.2.0) (2026-11-13)
+
+
+### Features
+
+* save drawings and signatures as PNG, signature styles, MathJax 4 ([b4eaf91](https://github.com/mantasu/pdf-editor/commit/b4eaf911dfa44e28969b498ca5212787ca0a1169))
+
 # [1.1.0](https://github.com/mantasu/pdf-editor/compare/v1.0.0...v1.1.0) (2026-10-17)
 
 
